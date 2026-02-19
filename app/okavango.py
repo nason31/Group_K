@@ -8,200 +8,111 @@ and Natural Earth (Shapefile).
 import io
 import os
 import zipfile
-from typing import Optional
+from typing import Optional, List, Dict
 
 import geopandas as gpd
 import pandas as pd
 import requests
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-DOWNLOAD_DIR: str = "downloads"
-SHAPEFILE_DIR: str = os.path.join(DOWNLOAD_DIR, "ne_110m_admin_0_countries")
-SHAPEFILE_PATH: str = os.path.join(SHAPEFILE_DIR, "ne_110m_admin_0_countries.shp")
-SHAPEFILE_ZIP_PATH: str = os.path.join(DOWNLOAD_DIR, "ne_110m_admin_0_countries.zip")
-
-# Each tuple contains (url, target_csv_filename).
-# A None filename signals that the zip should be saved and extracted as a
-# shapefile rather than treated as a single-CSV archive.
-DATASET_SOURCES: list[tuple[str, Optional[str]]] = [
-    (
-        "https://ourworldindata.org/grapher/annual-change-forest-area.zip"
-        "?v=1&csvType=full&useColumnShortNames=false",
-        "annual-change-forest-area.csv",
-    ),
-    (
-        "https://ourworldindata.org/grapher/annual-deforestation.zip"
-        "?v=1&csvType=full&useColumnShortNames=false",
-        "annual-deforestation.csv",
-    ),
-    (
-        "https://ourworldindata.org/grapher/terrestrial-protected-areas.zip"
-        "?v=1&csvType=full&useColumnShortNames=false",
-        "terrestrial-protected-areas.csv",
-    ),
-    (
-        "https://ourworldindata.org/grapher/share-degraded-land.zip"
-        "?v=1&csvType=full&useColumnShortNames=false",
-        "share-degraded-land.csv",
-    ),
-    (
-        "https://ourworldindata.org/grapher/forest-area-as-share-of-land-area.zip"
-        "?v=1&csvType=full&useColumnShortNames=false",
-        "forest-area-as-share-of-land-area.csv",
-    ),
-    (
-        "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip",
-        None,  # Shapefile archive — extract all contents
-    ),
-]
-
-CSV_PATHS: list[str] = [
-    os.path.join(DOWNLOAD_DIR, "annual-change-forest-area.csv"),
-    os.path.join(DOWNLOAD_DIR, "annual-deforestation.csv"),
-    os.path.join(DOWNLOAD_DIR, "terrestrial-protected-areas.csv"),
-    os.path.join(DOWNLOAD_DIR, "share-degraded-land.csv"),
-    os.path.join(DOWNLOAD_DIR, "forest-area-as-share-of-land-area.csv"),
-]
-
+from pydantic import BaseModel, HttpUrl, Field
 
 # ---------------------------------------------------------------------------
-# Functions
+# Pydantic Schema (Replacing the old Tuple list)
 # ---------------------------------------------------------------------------
 
+class DatasetSource(BaseModel):
+    """Validates the URL and target filename for each dataset."""
+    url: HttpUrl
+    target_filename: Optional[str] = Field(None, description="None signals a shapefile archive")
 
-def download_datasets() -> None:
-    """Download and extract all project datasets into the downloads directory.
+# ---------------------------------------------------------------------------
+# The Main Class
+# ---------------------------------------------------------------------------
 
-    Iterates over ``DATASET_SOURCES`` and skips any file that already exists
-    on disk. CSV datasets are extracted directly from their zip archives.
-    The Natural Earth shapefile archive is saved as a zip and then extracted
-    into its own subdirectory.
-
-    Downloads are streamed in 8 KB chunks to limit memory usage. A connection
-    timeout of 10 s and a read timeout of 60 s are applied to every request.
-
-    Returns:
-        None
-
-    Raises:
-        requests.HTTPError: If the server returns a non-2xx status code.
-        zipfile.BadZipFile: If a downloaded file cannot be opened as a zip.
+class OkavangoDataHandler:
     """
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-    for url, target_filename in DATASET_SOURCES:
-
-        # --- Skip logic ---------------------------------------------------
-        if target_filename is None:
-            # Shapefile: skip if the zip already exists on disk.
-            if os.path.exists(SHAPEFILE_ZIP_PATH):
-                print("  Shapefile zip already exists, skipping...")
-                continue
-        else:
-            # CSV dataset: skip if the extracted file already exists.
-            local_csv_path = os.path.join(DOWNLOAD_DIR, target_filename)
-            if os.path.exists(local_csv_path):
-                print(f"  {target_filename} already exists, skipping download...")
-                continue
-
-        # --- Download -----------------------------------------------------
-        print(f"Downloading {url}...")
-        with requests.get(url, stream=True, timeout=(10, 60)) as response:
-            response.raise_for_status()
-            # Collect streamed chunks into a single bytes object.
-            raw_content: bytes = b"".join(
-                chunk for chunk in response.iter_content(chunk_size=8192) if chunk
-            )
-
-        # --- Extract / save -----------------------------------------------
-        if target_filename is None:
-            # Save the shapefile zip to disk and extract all contained files.
-            with open(SHAPEFILE_ZIP_PATH, "wb") as zip_file:
-                zip_file.write(raw_content)
-            print(f"  Saved shapefile zip to {SHAPEFILE_ZIP_PATH}")
-
-            with zipfile.ZipFile(SHAPEFILE_ZIP_PATH, "r") as zf:
-                zf.extractall(SHAPEFILE_DIR)
-            print(f"  Extracted shapefile to {SHAPEFILE_DIR}")
-        else:
-            # Extract only the target CSV from the in-memory zip archive.
-            with zipfile.ZipFile(io.BytesIO(raw_content), "r") as zf:
-                zf.extract(target_filename, DOWNLOAD_DIR)
-            print(f"  Extracted {target_filename}")
-
-
-def load_and_merge_data() -> gpd.GeoDataFrame:
-    """Load all CSV datasets and the shapefile, then merge them into one GeoDataFrame.
-
-    Merging is performed in two stages:
-
-    1. **CSV stage** — All CSV files are merged sequentially on the ``"Code"``
-       (ISO country code) and ``"Year"`` columns using an outer join, so that
-       every country-year combination present in any dataset is retained.
-       Rows without a ``"Code"`` value (e.g. regional aggregates) are dropped
-       before each merge. Duplicate columns introduced by the suffixing
-       mechanism are removed after every merge step.
-
-    2. **Geo stage** — The Natural Earth GeoDataFrame is left-joined onto the
-       merged CSV DataFrame on ``GU_A3`` (geo side) and ``"Code"`` (CSV side),
-       ensuring that all 177 countries in the shapefile are preserved even if
-       they have no matching CSV data.
-
-    Returns:
-        gpd.GeoDataFrame: A GeoDataFrame containing country geometries and all
-        environmental indicator columns from the CSV datasets.
-
-    Raises:
-        FileNotFoundError: If any of the expected CSV files or the shapefile
-            are missing from the downloads directory.
+    Manages the environmental and geospatial data lifecycle.
     """
-    merged_csv: Optional[pd.DataFrame] = None
+    def __init__(
+        self,
+        download_dir: str = "downloads",
+        sources: Optional[List[DatasetSource]] = None
+    ) -> None:
+        """
+        Phase 2 Requirements:
+        1. Initialize directory and path constants as attributes.
+        2. Execute download and merge functions automatically.
+        3. Store dataframes as class attributes.
+        """
+        # Converting constants to instance attributes
+        self.download_dir = download_dir
+        self.shapefile_dir = os.path.join(self.download_dir, "ne_110m_admin_0_countries")
+        self.shapefile_path = os.path.join(self.shapefile_dir, "ne_110m_admin_0_countries.shp")
+        
+        # New attributes for storing loaded data
+        self.dataframes: Dict[str, pd.DataFrame] = {}
+        self.final_map: Optional[gpd.GeoDataFrame] = None
 
-    for csv_path in CSV_PATHS:
-        df: pd.DataFrame = pd.read_csv(csv_path)
+        # Automatic execution as per requirements
+        if sources:
+            self.download_project_data(sources)
+            self.final_map = self.merge_geospatial_layers()
+        
+    def download_project_data(self, sources: List[DatasetSource]) -> None:
+        """Function 1: Handles the downloading and extraction logic."""
+        os.makedirs(self.download_dir, exist_ok=True)
 
-        # Remove rows that represent regional aggregates (no ISO country code).
-        df = df.dropna(subset=["Code"])
+        for source in sources:
+            url_str = str(source.url)
+            
+            # Streaming download logic from original code
+            with requests.get(url_str, stream=True, timeout=(10, 60)) as response:
+                response.raise_for_status()
+                raw_content = b"".join(chunk for chunk in response.iter_content(8192) if chunk)
 
-        if merged_csv is None:
-            # First CSV becomes the base of the merged table.
-            merged_csv = df
-        else:
-            # Outer join preserves all country-year rows from both sides.
-            # The "_drop" suffix marks duplicate shared columns for removal.
-            merged_csv = merged_csv.merge(
-                df,
-                on=["Code", "Year"],
-                how="outer",
-                suffixes=("", "_drop"),
-            )
-            # Remove columns that are exact duplicates introduced by suffixing.
-            merged_csv = merged_csv[
-                [col for col in merged_csv.columns if not col.endswith("_drop")]
-            ]
+            if source.target_filename:
+                # Extract CSV and immediately read into the class attribute
+                with zipfile.ZipFile(io.BytesIO(raw_content), "r") as zf:
+                    zf.extract(source.target_filename, self.download_dir)
+                
+                # REQUIREMENT: Read datasets into attributes
+                path = os.path.join(self.download_dir, source.target_filename)
+                self.dataframes[source.target_filename] = pd.read_csv(path).dropna(subset=["Code"])
+            else:
+                # Handle Shapefile extraction
+                zip_path = os.path.join(self.download_dir, "ne_countries.zip")
+                with open(zip_path, "wb") as f:
+                    f.write(raw_content)
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(self.shapefile_dir)
+    
+    def merge_geospatial_layers(self) -> gpd.GeoDataFrame:
+        """Function 2: Merges the shapefile (left) with the downloaded CSVs."""
+        # Load the base map
+        gdf = gpd.read_file(self.shapefile_path)
+        
+        merged_csv: Optional[pd.DataFrame] = None
+        for df in self.dataframes.values():
+            if merged_csv is None:
+                merged_csv = df
+            else:
+                # Merge logic using Code and Year
+                merged_csv = merged_csv.merge(df, on=["Code", "Year"], how="outer", suffixes=("", "_drop"))
+                merged_csv = merged_csv[[col for col in merged_csv.columns if not col.endswith("_drop")]]
 
-    # Load the Natural Earth country polygons as the base GeoDataFrame.
-    gdf: gpd.GeoDataFrame = gpd.read_file(SHAPEFILE_PATH)
+        # Final merge with GeoPandas on the LEFT
+        if merged_csv is not None:
+            return gdf.merge(merged_csv, left_on="GU_A3", right_on="Code", how="left")
+        return gdf
 
-    # Left join keeps all 177 shapefile countries; unmatched rows get NaN.
-    merged: gpd.GeoDataFrame = gdf.merge(
-        merged_csv,
-        left_on="GU_A3",
-        right_on="Code",
-        how="left",
-    )
-
-    return merged
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-download_datasets()
-merged_data: gpd.GeoDataFrame = load_and_merge_data()
-print(merged_data.shape)
+if __name__ == "__main__":
+    # You would define your sources here using the Pydantic model
+    my_sources = [
+        DatasetSource(url="https://ourworldindata.org/grapher/annual-deforestation.zip?v=1", target_filename="annual-deforestation.csv"),
+        DatasetSource(url="https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip")
+    ]
+    
+    # This single call now downloads, extracts, reads into attributes, and merges.
+    handler = OkavangoDataHandler(sources=my_sources)
+    
+    # You can access the final result directly
+    print(handler.final_map.head())
