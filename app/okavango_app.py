@@ -194,6 +194,31 @@ class OkavangoData:
                         f.write(response.content)
 
     def _load_and_clean_dataframes(self) -> None:
+        """
+        Load the shapefile and each CSV dataset, then perform basic cleaning.
+
+        For each source:
+        - Shapefile sources are loaded into `self.geo_dataframe`.
+        - CSV sources are read into pandas DataFrames and cleaned by:
+          1) Identifying a likely geographic identifier column.
+          2) Renaming that column to "Code" (dropping any pre-existing "Code" column
+             when necessary to avoid ambiguity).
+          3) Dropping rows with missing country codes.
+          4) If present, sorting by "Year" descending and keeping the most recent row
+             per country.
+          5) Keeping only "Code" plus metric columns (dropping "Year", "Entity",
+             and "Country" fields when present).
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - If no suitable geographic identifier column is found, that CSV is skipped.
+        - Cleaned DataFrames are stored in `self.dataframes` keyed by filename.
+
+        """
         for source in self.sources:
             if source.is_shapefile:
                 shp_path = os.path.join(self.shapefile_dir, "ne_110m_admin_0_countries.shp")
@@ -241,6 +266,27 @@ class OkavangoData:
                 self.dataframes[source.filename] = df
 
     def merge_geospatial_layers(self) -> None:
+        """
+        Merge all cleaned metric tables into the world GeoDataFrame.
+
+        The method:
+        - Creates a copy of `self.geo_dataframe`.
+        - Determines which country code column to use for joining:
+          - Uses "ADM0_A3" if present, otherwise uses "ISO_A3".
+        - Iterates through each cleaned DataFrame in `self.dataframes` and left-joins it
+          to the GeoDataFrame on the chosen map code column vs the metric "Code" column.
+        - Drops any merge-produced duplicate columns with the suffix "_drop".
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - If `self.geo_dataframe` is not loaded, the function returns without merging.
+        - The final merged result is stored in `self.merged_data`.
+
+        """
         if self.geo_dataframe is None:
             return
 
