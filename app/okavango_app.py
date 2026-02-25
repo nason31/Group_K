@@ -1,3 +1,33 @@
+"""
+Project Okavango: Environmental Dashboard (Streamlit)
+
+This module builds a Streamlit dashboard that downloads and merges the most recent
+country-level environmental indicators from Our World in Data (OWID) with a Natural
+Earth world-countries shapefile, then visualizes the selected metric on a choropleth
+map and highlights top/bottom performers.
+
+The pipeline is organized into:
+1) Data models and data handling utilities (Pydantic + pandas/geopandas)
+2) Streamlit UI and plotting (matplotlib)
+
+Notes
+-----
+- CSV sources are downloaded once into a local directory and reused on subsequent runs.
+- OWID datasets are reduced to a single (most recent) record per country code when a
+  "Year" column is present.
+- Geospatial joins are performed using the Natural Earth 3-letter country code field
+  (preferring "ADM0_A3", falling back to "ISO_A3") merged against the normalized "Code"
+  column in each dataset.
+
+Dependencies
+------------
+os, zipfile, requests
+pandas, geopandas
+streamlit, matplotlib
+pydantic
+
+"""
+
 import os
 import zipfile
 import requests
