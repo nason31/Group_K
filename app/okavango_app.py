@@ -10,6 +10,18 @@ The pipeline is organized into:
 1) Data models and data handling utilities (Pydantic + pandas/geopandas)
 2) Streamlit UI and plotting (matplotlib)
 
+Why it works this way
+---------------------
+- **Idempotency:** downloads are skipped if files already
+  exist locally. This makes reruns safe and fast (same inputs → same stored artifacts)
+  and prevents unnecessary network calls.
+- **"Most recent" snapshot:** when a dataset includes a "Year" column, the pipeline
+  keeps the latest year per country. This aligns the dashboard with “current” values
+  rather than historical time series.
+- **Schema variability:** OWID exports can vary in naming for country identifiers
+  ("Code", "ISO", "Entity", etc.). The loader uses heuristics to locate the identifier
+  column and normalizes it to "Code" for consistent merging.
+
 Notes
 -----
 - CSV sources are downloaded once into a local directory and reused on subsequent runs.
@@ -26,7 +38,19 @@ pandas, geopandas
 streamlit, matplotlib
 pydantic
 
+Examples
+--------
+Run the Streamlit app (from your terminal):
+
+>>> streamlit run app.py
+
+Instantiate the data handler in Python (outside Streamlit):
+
+>>> handler = OkavangoData(sources=project_sources)
+>>> handler.merged_data is not None
+True
 """
+
 
 import os
 import zipfile
@@ -67,7 +91,15 @@ class DataSource(BaseModel):
     - For CSV sources, `filename` should be unique to avoid collisions in the
       download directory.
 
-    """
+    Examples
+    --------
+    >>> src = DataSource(
+    ...     url="https://ourworldindata.org/grapher/annual-deforestation.csv",
+    ...     filename="annual-deforestation.csv",
+    ... )
+    >>> src.is_shapefile
+    False
+    """ 
 
     url: HttpUrl
     filename: Optional[str] = Field(default=None)
@@ -115,6 +147,11 @@ class OkavangoData:
       containing "code"/"iso", and if none, falling back to "entity"/"country"/"name".
     - When a "Year" column exists, only the latest entry per country is retained.
 
+    Examples
+    --------
+    >>> handler = OkavangoData(sources=project_sources)
+    >>> isinstance(handler.merged_data, gpd.GeoDataFrame)
+    True
     """
     def __init__(self, sources: list[DataSource], download_dir: str = "downloads"):
         """
@@ -126,6 +163,19 @@ class OkavangoData:
             List of configured sources to download and process.
         download_dir : str, default="downloads"
             Output directory for downloaded and extracted data.
+
+        Raises
+        ------
+        OSError
+            If the download directory cannot be created.
+        requests.RequestException
+            If downloads fail during initialization (propagated from download step).
+
+        Examples
+        --------
+        >>> handler = OkavangoData(sources=project_sources, download_dir="downloads")
+        >>> handler.dataframes is not None
+        True        
 
         """
         self.sources = sources
@@ -151,6 +201,14 @@ class OkavangoData:
         - For CSV files: downloads each CSV to `download_dir` under `source.filename`
           if not already present.
 
+        Reasoning (idempotency)
+        ----------------------------------------
+        This method is intentionally **idempotent**: if the expected local files
+        already exist, it skips downloading them again. This:
+        - reduces runtime and bandwidth usage,
+        - makes reruns safe and predictable,
+        - mirrors the idempotency principle as discussed  
+
         Returns
         -------
         None
@@ -168,7 +226,12 @@ class OkavangoData:
         - Downloads are skipped if the target file already exists locally.
         - Shapefile extraction is performed after download completes.
 
+        Examples
+        --------
+        >>> handler = OkavangoData(sources=project_sources)
+        >>> handler.download_project_data()  # safe to call again; should skip existing files
         """
+
         for source in self.sources:
             url_str = str(source.url)
             
@@ -197,6 +260,16 @@ class OkavangoData:
         """
         Load the shapefile and each CSV dataset, then perform basic cleaning.
 
+        Reasoning
+        ---------
+
+        The dashboard needs a **single comparable value per country** per metric.
+        OWID CSV exports may contain many years or varying schema conventions.
+        This method normalizes all sources into a consistent shape:
+        - a shared key column "Code",
+        - the latest observation per country when "Year" is available,
+        - only the metric columns required for visualization.
+
         For each source:
         - Shapefile sources are loaded into `self.geo_dataframe`.
         - CSV sources are read into pandas DataFrames and cleaned by:
@@ -213,11 +286,30 @@ class OkavangoData:
         -------
         None
 
+        Raises
+        ------
+        FileNotFoundError
+            If the expected shapefile (.shp) is missing when attempting to load it.
+        UnicodeDecodeError
+            If a CSV file cannot be decoded using the specified encoding ('utf-8-sig').
+        pandas.errors.ParserError
+            If a CSV file is malformed or cannot be parsed by pandas.
+        OSError
+            If there are filesystem-related issues while reading input files.
+        ValueError
+            If geopandas fails to correctly interpret the shapefile contents.
+
         Notes
         -----
         - If no suitable geographic identifier column is found, that CSV is skipped.
         - Cleaned DataFrames are stored in `self.dataframes` keyed by filename.
 
+        Examples
+        --------
+        >>> handler = OkavangoData(sources=project_sources)
+        >>> handler._load_and_clean_dataframes()
+        >>> len(handler.dataframes) > 0
+        True
         """
         for source in self.sources:
             if source.is_shapefile:
@@ -269,7 +361,13 @@ class OkavangoData:
         """
         Merge all cleaned metric tables into the world GeoDataFrame.
 
-        The method:
+        Reasoning
+        ---------
+        Visualization requires geometry + attributes in a single table.
+        This method left-joins each cleaned metric DataFrame onto the world countries
+        GeoDataFrame so that every country shape is kept even if some metrics are missing.
+
+        Method:
         - Creates a copy of `self.geo_dataframe`.
         - Determines which country code column to use for joining:
           - Uses "ADM0_A3" if present, otherwise uses "ISO_A3".
@@ -281,11 +379,24 @@ class OkavangoData:
         -------
         None
 
+        Raises
+        ------
+        KeyError
+            If expected join columns are missing (e.g., neither "ADM0_A3" nor "ISO_A3").
+        ValueError
+            If merge inputs are not mergeable due to incompatible dtypes or invalid frames.
+
         Notes
         -----
         - If `self.geo_dataframe` is not loaded, the function returns without merging.
         - The final merged result is stored in `self.merged_data`.
 
+        Examples
+        --------
+        >>> handler = OkavangoData(sources=project_sources)
+        >>> handler.merge_geospatial_layers()
+        >>> "geometry" in handler.merged_data.columns
+        True
         """
         if self.geo_dataframe is None:
             return
@@ -357,11 +468,24 @@ def get_data_handler():
     OkavangoData
         A fully prepared data handler containing the merged geospatial dataset.
 
+    Raises
+    ------
+    requests.RequestException
+        If a download fails during handler creation.
+    OSError
+        If local filesystem operations fail (e.g., creating directories).    
+
     Notes
     -----
     - A Streamlit spinner is shown while the data is being downloaded and merged.
     - The handler uses the global `project_sources` configuration.
 
+    Examples
+    --------
+    In the Streamlit script:
+
+    >>> handler = get_data_handler()
+    >>> gdf = handler.merged_data
     """
     with st.spinner("Downloading and merging the latest data..."):
         return OkavangoData(sources=project_sources)
@@ -381,6 +505,13 @@ def format_metric(raw_name):
     """
     Converting a raw OWID column name into a user-friendly metric label.
 
+    Reasoning
+    ---------
+    OWID column names can be quite long or inconsistent across different datasets.
+    For the dashboard, we want the metric names to look clean and easy to understand
+    for users. At the same time, we keep the original column names internally so the
+    data processing and plotting logic continues to work correctly.
+
     Parameters
     ----------
     raw_name : str
@@ -393,7 +524,13 @@ def format_metric(raw_name):
         Human-readable label for display in the Streamlit UI. If `raw_name` is not
         present in `PRETTY_LABELS`, a best-effort title-cased formatting is applied.
 
-    """
+    Examples
+    --------
+    >>> format_metric("Annual deforestation")
+    'Annual Deforestation'
+    >>> format_metric("some_new_metric_name")
+    'Some New Metric Name'
+    """        
     return PRETTY_LABELS.get(raw_name, raw_name.replace("_", " ").title())
 
 st.subheader("Map Visualization")
