@@ -44,6 +44,31 @@ from typing import Optional, Dict
 # ==========================================
 
 class DataSource(BaseModel):
+    """
+    Defines a remote data input used by the Okavango data pipeline.
+
+    A `DataSource` describes either:
+    - A CSV file containing country-level metrics (typically from OWID), or
+    - A zipped Natural Earth shapefile containing world country geometries.
+
+    Parameters
+    ----------
+    url : pydantic.HttpUrl
+        Remote URL of the dataset. Must be a valid HTTP/HTTPS URL.
+    filename : str, optional
+        Local filename used to persist a CSV download in `download_dir`.
+        Only relevant when `is_shapefile=False`.
+    is_shapefile : bool, default=False
+        Whether the source points to a zipped shapefile download.
+
+    Notes
+    -----
+    - When `is_shapefile=True`, `filename` is ignored.
+    - For CSV sources, `filename` should be unique to avoid collisions in the
+      download directory.
+
+    """
+
     url: HttpUrl
     filename: Optional[str] = Field(default=None)
     is_shapefile: bool = Field(default=False)
