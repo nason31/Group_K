@@ -74,6 +74,48 @@ class DataSource(BaseModel):
     is_shapefile: bool = Field(default=False)
 
 class OkavangoData:
+    """
+    Data handler for Project Okavango.
+
+    This class:
+    1) Downloads project sources (CSV metrics + world shapefile) into a local directory.
+    2) Loads and cleans CSV datasets, normalizing a country code column to "Code".
+    3) Loads the shapefile into a GeoDataFrame.
+    4) Merges each metric dataset into the world map layer.
+
+    Parameters
+    ----------
+    sources : list[DataSource]
+        List of sources to download and process. Should include one shapefile source
+        and one or more CSV metric sources.
+    download_dir : str, default="downloads"
+        Directory where downloaded artifacts are stored (CSV files and shapefile zip).
+
+    Attributes
+    ----------
+    sources : list[DataSource]
+        The configured list of sources.
+    download_dir : str
+        Base directory for persisted downloads.
+    shapefile_dir : str
+        Directory where the shapefile zip is extracted.
+    dataframes : dict[str, pandas.DataFrame]
+        Mapping from CSV filename to its cleaned DataFrame. Each DataFrame includes:
+        - "Code" (normalized country identifier)
+        - One or more metric columns (and excludes "Year"/"Entity"/"Country" when present)
+    geo_dataframe : geopandas.GeoDataFrame or None
+        GeoDataFrame loaded from the Natural Earth shapefile.
+    merged_data : geopandas.GeoDataFrame or None
+        World GeoDataFrame with all metric columns merged in.
+
+    Notes
+    -----
+    - Initialization performs the full pipeline (download → load/clean → merge).
+    - CSV cleaning attempts to infer a geographic key column by searching for columns
+      containing "code"/"iso", and if none, falling back to "entity"/"country"/"name".
+    - When a "Year" column exists, only the latest entry per country is retained.
+
+    """
     def __init__(self, sources: list[DataSource], download_dir: str = "downloads"):
         self.sources = sources
         self.download_dir = download_dir
