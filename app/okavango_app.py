@@ -117,6 +117,17 @@ class OkavangoData:
 
     """
     def __init__(self, sources: list[DataSource], download_dir: str = "downloads"):
+        """
+        Initialize the data handler and run the full data preparation pipeline.
+
+        Parameters
+        ----------
+        sources : list[DataSource]
+            List of configured sources to download and process.
+        download_dir : str, default="downloads"
+            Output directory for downloaded and extracted data.
+
+        """
         self.sources = sources
         self.download_dir = download_dir
         self.shapefile_dir = os.path.join(self.download_dir, "ne_110m_admin_0_countries")
@@ -131,6 +142,33 @@ class OkavangoData:
         self.merge_geospatial_layers()
 
     def download_project_data(self) -> None:
+        """
+        Downloads all configured project sources to the local filesystem.
+
+        This method iterates over `self.sources` and:
+        - For shapefiles: downloads a zip to `download_dir`, then extracts it into
+          `self.shapefile_dir` if not already present.
+        - For CSV files: downloads each CSV to `download_dir` under `source.filename`
+          if not already present.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        requests.HTTPError
+            If a download request returns a non-success status and `raise_for_status()`
+            triggers.
+        requests.RequestException
+            For network issues, timeouts, or other request-layer failures.
+
+        Notes
+        -----
+        - Downloads are skipped if the target file already exists locally.
+        - Shapefile extraction is performed after download completes.
+
+        """
         for source in self.sources:
             url_str = str(source.url)
             
