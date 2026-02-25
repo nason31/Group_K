@@ -345,6 +345,24 @@ st.markdown("**Analyzing the most recent environmental data from Our World in Da
 
 @st.cache_resource
 def get_data_handler():
+    """
+    Creating and cache an `OkavangoData` handler for the Streamlit app.
+
+    This function is decorated with `st.cache_resource` so the expensive steps
+    (download, preprocessing, and geospatial merging) are performed only once
+    per app session unless the cache is invalidated.
+
+    Returns
+    -------
+    OkavangoData
+        A fully prepared data handler containing the merged geospatial dataset.
+
+    Notes
+    -----
+    - A Streamlit spinner is shown while the data is being downloaded and merged.
+    - The handler uses the global `project_sources` configuration.
+
+    """
     with st.spinner("Downloading and merging the latest data..."):
         return OkavangoData(sources=project_sources)
 
@@ -360,6 +378,22 @@ PRETTY_LABELS = {
 }
 
 def format_metric(raw_name):
+    """
+    Converting a raw OWID column name into a user-friendly metric label.
+
+    Parameters
+    ----------
+    raw_name : str
+        Raw column name as found in OWID CSV files and propagated into the merged
+        GeoDataFrame.
+
+    Returns
+    -------
+    str
+        Human-readable label for display in the Streamlit UI. If `raw_name` is not
+        present in `PRETTY_LABELS`, a best-effort title-cased formatting is applied.
+
+    """
     return PRETTY_LABELS.get(raw_name, raw_name.replace("_", " ").title())
 
 st.subheader("Map Visualization")
