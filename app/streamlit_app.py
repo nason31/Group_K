@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
+from matplotlib.patches import Patch
 
 from data_handler import OkavangoData, project_sources
 
@@ -138,15 +139,23 @@ def format_metric(raw_name: str) -> str:
 
 st.subheader("Map Visualization")
 
-# Extract available metrics from loaded dataframes
+# Extract available metrics from loaded dataframes (CSV files only, excludes shapefile)
 owid_metrics = []
-for df in handler.dataframes.values():
+for filename, df in handler.dataframes.items():
     for col in df.columns:
         if col != "Code":
             owid_metrics.append(col)
 
 # Filter to only metrics that successfully merged into the geodataframe
-valid_metrics = [col for col in owid_metrics if col in gdf.columns]
+# Exclude geometry, shapefile-only columns, and annotation columns
+excluded_columns = {'geometry', 'ADMIN', 'ISO_A3', 'ADM0_A3', 'NAME', 'CONTINENT', 'REGION_UN', 
+                    'SUBREGION', 'REGION_WB', 'NAME_LONG', 'FORMAL_EN', 'SOVEREIGNT', 'SOV_A3'}
+
+# Filter valid metrics: must be in gdf, not excluded, and not annotation columns
+valid_metrics = [col for col in owid_metrics 
+                 if col in gdf.columns 
+                 and col not in excluded_columns
+                 and 'annotation' not in col.lower()]
 
 if not valid_metrics:
     st.error("Merge failed! The OWID metrics didn't attach to the map.")
@@ -162,6 +171,13 @@ selected_metric = st.selectbox(
 gdf[selected_metric] = pd.to_numeric(gdf[selected_metric], errors='coerce')
 display_name = format_metric(selected_metric)
 
+# Get data statistics for context
+data_with_values = gdf[selected_metric].dropna()
+countries_with_data = len(data_with_values)
+
+# Display metric context
+st.info(f"📊 **Data Summary:** {countries_with_data} countries with data")
+
 
 # ==========================================
 # PLOT 1: WORLD MAP VISUALIZATION
@@ -173,9 +189,16 @@ gdf.plot(
     ax=ax,
     legend=True,
     cmap="YlGnBu",
-    missing_kwds={"color": "lightgrey", "label": "No Data"}
+    missing_kwds={"color": "lightgrey", "label": "No Data"},
+    legend_kwds={
+        'label': display_name,
+        'orientation': "horizontal",
+        'shrink': 0.8,
+        'aspect': 30,
+        'pad': 0.05
+    }
 )
-ax.set_title(f"Global Distribution: {display_name}") 
+ax.set_title(f"Global Distribution: {display_name}", fontsize=16, fontweight='bold', pad=20) 
 ax.set_axis_off()
 st.pyplot(fig)
 
@@ -197,20 +220,43 @@ bottom_5 = chart_data.nsmallest(5, selected_metric)
 extremes_df = pd.concat([bottom_5, top_5])
 
 # Create bar chart
-fig2, ax2 = plt.subplots(figsize=(10, 5))
+fig2, ax2 = plt.subplots(figsize=(12, 6))
 country_col = "NAME" if "NAME" in extremes_df.columns else "ADMIN" 
 
-# Color scheme: Bottom 5 (red) on left, Top 5 (green) on right
-bars = ax2.bar(
-    extremes_df[country_col], 
-    extremes_df[selected_metric], 
-    color=['#d9534f']*5 + ['#5cb85c']*5
-)
+# Get country names and values
+countries = extremes_df[country_col].tolist()
+values = extremes_df[selected_metric].tolist()
 
-ax2.set_ylabel(display_name) 
-ax2.set_title(f"Top 5 vs Bottom 5: {display_name}") 
-plt.xticks(rotation=45, ha='right')
+# Color scheme: Bottom 5 (red) on left, Top 5 (green) on right
+colors = ['#d9534f']*5 + ['#5cb85c']*5
+bars = ax2.bar(countries, values, color=colors, edgecolor='black', linewidth=0.5)
+
+# Add value labels on top of bars
+for bar in bars:
+    height = bar.get_height()
+    ax2.text(
+        bar.get_x() + bar.get_width()/2., 
+        height,
+        f'{height:,.1f}',
+        ha='center', 
+        va='bottom',
+        fontsize=9,
+        fontweight='bold'
+    )
+
+# Create custom legend
+legend_elements = [
+    Patch(facecolor='#d9534f', edgecolor='black', label='Bottom 5 (Lowest)'),
+    Patch(facecolor='#5cb85c', edgecolor='black', label='Top 5 (Highest)')
+]
+ax2.legend(handles=legend_elements, loc='upper left', fontsize=10, framealpha=0.9)
+
+ax2.set_ylabel(display_name, fontsize=12, fontweight='bold') 
+ax2.set_xlabel('Country', fontsize=12, fontweight='bold')
+ax2.set_title(f"Top 5 vs Bottom 5 Countries: {display_name}", fontsize=14, fontweight='bold', pad=15) 
+plt.xticks(rotation=45, ha='right', fontsize=10)
 ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x:,.0f}"))
+ax2.grid(axis='y', alpha=0.3, linestyle='--')
 fig2.tight_layout()
 
 st.pyplot(fig2)
