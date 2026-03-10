@@ -7,13 +7,13 @@ This module provides functions for:
 - Orchestrating the full AI analysis pipeline
 """
 
+import base64
 import importlib
 import math
 import os
 from pathlib import Path
 from typing import Any
 
-import base64
 import requests
 import yaml
 
@@ -54,7 +54,6 @@ def _load_config() -> dict[str, Any]:
             ) from e
 
     return _config_cache
-
 
 def get_image(
     lat: float, lon: float, zoom: int, output_dir: str = "images",
@@ -178,19 +177,56 @@ def ensure_model(model_name: str) -> None:
         model_name: Name of the Ollama model to verify locally.
 
     Raises:
-        Any exception raised by the Ollama client while listing or pulling
-            models.
+        RuntimeError: If Ollama is not accessible or the model pull fails.
     """
+    print(f"[ensure_model] checking model: {model_name}")
     ollama_module = importlib.import_module("ollama")
-    models_response = ollama_module.list()
-    available_models = {
-        model["name"]
-        for model in models_response.get("models", [])
-        if isinstance(model, dict) and "name" in model
-    }
+    try:
+        # Use a short timeout for quick connectivity/list checks.
+        print("[ensure_model] connecting to Ollama at localhost:11434")
+        list_client = ollama_module.Client(timeout=10.0)
+        models_response = list_client.list()
+    except Exception as e:
+        raise RuntimeError(
+            f"Cannot connect to Ollama. Ensure Ollama is running on "
+            f"localhost:11434. Error: {e}"
+        ) from e
+
+    # Extract model names from the response (handles both dict and object formats)
+    raw_models = []
+    if hasattr(models_response, "models"):
+        raw_models = models_response.models
+    elif isinstance(models_response, dict):
+        raw_models = models_response.get("models", [])
+
+    available_models: set[str] = set()
+    for model in raw_models:
+        if isinstance(model, dict):
+            name = model.get("name") or model.get("model")
+        else:
+            name = getattr(model, "name", None) or getattr(model, "model", None)
+
+        if isinstance(name, str) and name:
+            available_models.add(name)
+
+    print(
+        f"[ensure_model] found {len(available_models)} local model(s): "
+        f"{sorted(available_models)}"
+    )
 
     if model_name not in available_models:
-        ollama_module.pull(model_name)
+        try:
+            print(f"[ensure_model] model '{model_name}' not found locally; pulling...")
+            # Pull can take minutes depending on model size/network speed.
+            pull_client = ollama_module.Client(timeout=1800.0)
+            pull_client.pull(model_name)
+            print(f"[ensure_model] pull complete for model '{model_name}'")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to pull model '{model_name}': {e}"
+            ) from e
+    else:
+        print(f"[ensure_model] model '{model_name}' already available locally")
 
 def describe_image(image_path: str) -> tuple[str, str, str]:
     """Send a satellite image to the configured vision model via Ollama.
@@ -227,25 +263,42 @@ def describe_image(image_path: str) -> tuple[str, str, str]:
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
     ollama_module = importlib.import_module("ollama")
-    response = ollama_module.chat(
-        model=model_name,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-                "images": [image_b64],
-            }
-        ],
-        options={"num_predict": max_tokens},
-    )
+    try:
+        # Create client with 120-second timeout for long-running inference
+        client = ollama_module.Client(timeout=1200.0)
+        response = client.chat(
+            model=model_name,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64],
+                }
+            ],
+            options={"num_predict": max_tokens},
+            stream=False,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to get image description from model '{model_name}'. "
+            f"Ensure Ollama is running. Error: {e}"
+        ) from e
 
-    description: str = (
-        response.get("message", {}).get("content", "").strip()
-        if isinstance(response, dict)
-        else getattr(
-            getattr(response, "message", None), "content", ""
-        ).strip()
-    )
+    # Extract description from response (handle Pydantic models)
+    description: str = ""
+    if hasattr(response, "message"):
+        # Pydantic model response
+        if hasattr(response.message, "content"):
+            description = response.message.content.strip()
+        elif isinstance(response.message, dict):
+            description = response.message.get("content", "").strip()
+    elif isinstance(response, dict):
+        # Dict response
+        msg = response.get("message", {})
+        if isinstance(msg, dict):
+            description = msg.get("content", "").strip()
+        else:
+            description = getattr(msg, "content", "").strip()
 
     if not description:
         raise RuntimeError(
@@ -254,11 +307,128 @@ def describe_image(image_path: str) -> tuple[str, str, str]:
 
     return model_name, prompt, description
 
+def assess_risk(description: str) -> tuple[str, str, str, bool]:
+    """
+    Sends the image description to a second Ollama text model.
+    The model generates environmental risk questions and answers them,
+    then returns an overall verdict.
+
+    Args:
+        description: Textual description of a satellite image produced by
+            ``describe_image()``.
+
+    Returns:
+        A tuple of ``(model_name, prompt_used, full_response, is_danger)``
+        where ``is_danger`` is ``True`` if the model concluded DANGER,
+        ``False`` for SAFE.
+
+    Raises:
+        RuntimeError: If the model returns an empty or null response.
+    """
+    config = _load_config()
+    text_cfg = config["text_model"]
+    model_name: str = text_cfg["name"]
+    base_prompt: str = text_cfg["prompt"]
+    max_tokens: int = text_cfg["max_tokens"]
+
+    ensure_model(model_name)
+
+    full_prompt = f"{base_prompt}\n\n{description}"
+
+    ollama_module = importlib.import_module("ollama")
+    try:
+        client = ollama_module.Client(timeout=1200.0)
+        response = client.chat(
+            model=model_name,
+            messages=[{"role": "user", "content": full_prompt}],
+            # think=False disables Qwen3's extended thinking mode so that
+            # the answer appears in message.content rather than being
+            # silently routed to message.thinking.
+            options={"num_predict": max_tokens},
+            think=False,
+            stream=False,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to get risk assessment from model '{model_name}'. "
+            f"Ensure Ollama is running. Error: {e}"
+        ) from e
+
+    # Extract response text (handle both Pydantic models and plain dicts).
+    # Qwen3 thinking models may return an empty content field while the
+    # actual response sits in message.thinking; check both fields.
+    def _extract_text(msg: Any) -> str:
+        if isinstance(msg, dict):
+            return (
+                msg.get("content") or msg.get("thinking") or ""
+            ).strip()
+        return (
+            getattr(msg, "content", None)
+            or getattr(msg, "thinking", None)
+            or ""
+        ).strip()
+
+    full_response: str = ""
+    if hasattr(response, "message"):
+        full_response = _extract_text(response.message)
+    elif isinstance(response, dict):
+        full_response = _extract_text(response.get("message", {}))
+
+    if not full_response:
+        raise RuntimeError(
+            f"Text model '{model_name}' returned an empty response."
+        )
+
+    is_danger: bool = "danger" in full_response.lower()
+
+    return model_name, full_prompt, full_response, is_danger
+
+def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
+    """Run the full AI workflow for a single map location.
+
+    This orchestration function:
+    1. Downloads a satellite image for the given coordinates.
+    2. Generates an image description with the configured vision model.
+    3. Assesses environmental risk using the configured text model.
+
+    Args:
+        lat: Latitude in degrees.
+        lon: Longitude in degrees.
+        zoom: Web map zoom level.
+
+    Returns:
+        A dictionary containing all pipeline outputs, ready for logging
+        and frontend display.
+    """
+    image_path = get_image(lat, lon, zoom)
+    image_model, image_prompt, image_description = describe_image(image_path)
+    text_model, text_prompt, text_description, danger = assess_risk(
+        image_description
+    )
+
+    return {
+        "image_path": image_path,
+        "image_model": image_model,
+        "image_prompt": image_prompt,
+        "image_description": image_description,
+        "text_model": text_model,
+        "text_prompt": text_prompt,
+        "text_description": text_description,
+        "danger": danger,
+    }
+
 
 if __name__ == "__main__":
-    # Smoke test: download an image of the Eiffel Tower area
+    # Smoke test for the end-to-end pipeline.
     try:
-        image_path = get_image(lat=48.85, lon=2.35, zoom=15)
-        print(f"Success! Image saved to: {image_path}")
+        result = run_pipeline(lat=48.85, lon=2.35, zoom=15)
+        print("✓ Pipeline completed")
+        print(f"Image path: {result['image_path']}")
+        print(f"Image model: {result['image_model']}")
+        print(f"Text model: {result['text_model']}")
+        print(
+            f"Verdict: {'DANGER' if result['danger'] else 'SAFE'}"
+        )
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"✗ Error: {e}")
