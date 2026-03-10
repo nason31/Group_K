@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.okavango_app import OkavangoData, DataSource
+from app.data_handler import OkavangoData, DataSource
 
 
 def test_download(tmp_path):
@@ -21,7 +21,7 @@ def test_download(tmp_path):
     fake_response.content = b"Code,Year,Value\nUSA,2023,10\n"
     fake_response.raise_for_status = MagicMock()
 
-    with patch("app.okavango_app.requests.get", return_value=fake_response) as mock_get:
+    with patch("app.data_handler.requests.get", return_value=fake_response) as mock_get:
 
         OkavangoData(
             sources=[source],
