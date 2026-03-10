@@ -170,6 +170,89 @@ def get_image(
     # Return absolute path
     return str(file_path.resolve())
 
+def ensure_model(model_name: str) -> None:
+    """
+    Ensure an Ollama model is available locally.
+
+    Args:
+        model_name: Name of the Ollama model to verify locally.
+
+    Raises:
+        Any exception raised by the Ollama client while listing or pulling
+            models.
+    """
+    ollama_module = importlib.import_module("ollama")
+    models_response = ollama_module.list()
+    available_models = {
+        model["name"]
+        for model in models_response.get("models", [])
+        if isinstance(model, dict) and "name" in model
+    }
+
+    if model_name not in available_models:
+        ollama_module.pull(model_name)
+
+def describe_image(image_path: str) -> tuple[str, str, str]:
+    """Send a satellite image to the configured vision model via Ollama.
+
+    Loads the image model configuration from models.yaml, ensures the model
+    is available locally, then sends the image to the model for analysis.
+
+    Args:
+        image_path: Absolute or relative path to the image file to analyse.
+
+    Returns:
+        A tuple of ``(model_name, prompt_used, description)`` where
+        ``model_name`` is the Ollama model identifier, ``prompt_used`` is
+        the prompt sent to the model, and ``description`` is the model's
+        textual description of the image.
+
+    Raises:
+        FileNotFoundError: If ``image_path`` does not exist.
+        RuntimeError: If the model returns an empty or null response.
+    """
+    path = Path(image_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+
+    config = _load_config()
+    image_cfg = config["image_model"]
+    model_name: str = image_cfg["name"]
+    prompt: str = image_cfg["prompt"]
+    max_tokens: int = image_cfg["max_tokens"]
+
+    ensure_model(model_name)
+
+    image_bytes = path.read_bytes()
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    ollama_module = importlib.import_module("ollama")
+    response = ollama_module.chat(
+        model=model_name,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [image_b64],
+            }
+        ],
+        options={"num_predict": max_tokens},
+    )
+
+    description: str = (
+        response.get("message", {}).get("content", "").strip()
+        if isinstance(response, dict)
+        else getattr(
+            getattr(response, "message", None), "content", ""
+        ).strip()
+    )
+
+    if not description:
+        raise RuntimeError(
+            f"Vision model '{model_name}' returned an empty response."
+        )
+
+    return model_name, prompt, description
 
 
 if __name__ == "__main__":
