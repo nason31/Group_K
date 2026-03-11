@@ -109,20 +109,21 @@ def render_top_header() -> None:
 
 
 def get_current_page() -> str:
-    """Read current page from URL query params with a safe default."""
-    page = st.query_params.get("page", "dashboard")
-    if page not in {"dashboard", "workflow"}:
-        return "dashboard"
-    return page
+    """Get active page from session state, seeded once from query params."""
+    valid_pages = {"dashboard", "workflow"}
+
+    if "active_page" not in st.session_state:
+        page = st.query_params.get("page", "dashboard")
+        if isinstance(page, list):
+            page = page[0] if page else "dashboard"
+        st.session_state.active_page = page if page in valid_pages else "dashboard"
+
+    return st.session_state.active_page
 
 
 def render_top_navigation(active_page: str) -> None:
     """Render top navigation buttons that switch pages in the same tab."""
-    st.markdown('<div class="okv-nav">', unsafe_allow_html=True)
     nav_col_1, nav_col_2 = st.columns(2)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    next_page = active_page
 
     with nav_col_1:
         if st.button(
@@ -131,7 +132,9 @@ def render_top_navigation(active_page: str) -> None:
             type="primary" if active_page == "dashboard" else "secondary",
             key="top_nav_dashboard",
         ):
-            next_page = "dashboard"
+            if st.session_state.active_page != "dashboard":
+                st.session_state.active_page = "dashboard"
+                st.rerun()
 
     with nav_col_2:
         if st.button(
@@ -140,11 +143,9 @@ def render_top_navigation(active_page: str) -> None:
             type="primary" if active_page == "workflow" else "secondary",
             key="top_nav_workflow",
         ):
-            next_page = "workflow"
-
-    if next_page != active_page:
-        st.query_params["page"] = next_page
-        st.rerun()
+            if st.session_state.active_page != "workflow":
+                st.session_state.active_page = "workflow"
+                st.rerun()
 
 
 apply_custom_styles()
@@ -481,6 +482,9 @@ def render_page_2() -> None:
     st.subheader("Page 2: AI Image Workflow")
     st.caption("Select coordinates and run the image analysis pipeline.")
 
+    if "pipeline_result" not in st.session_state:
+        st.session_state.pipeline_result = None
+
     run_pipeline = get_pipeline_runner()
     if run_pipeline is None:
         st.error(
@@ -528,16 +532,20 @@ def render_page_2() -> None:
 
     run_clicked = st.button("Run AI Pipeline", type="primary", use_container_width=True)
 
-    if not run_clicked:
+    if run_clicked:
+        with st.spinner("Running pipeline: image fetch + AI analysis..."):
+            try:
+                result = run_pipeline(float(lat), float(lon), int(zoom))
+                st.session_state.pipeline_result = result
+            except Exception as exc:
+                st.error(f"Pipeline execution failed: {exc}")
+                return
+    else:
+        result = st.session_state.pipeline_result
+
+    if result is None:
         st.info("Choose parameters and click 'Run AI Pipeline' to analyze the area.")
         return
-
-    with st.spinner("Running pipeline: image fetch + AI analysis..."):
-        try:
-            result = run_pipeline(float(lat), float(lon), int(zoom))
-        except Exception as exc:
-            st.error(f"Pipeline execution failed: {exc}")
-            return
 
     if not isinstance(result, dict):
         st.error("Backend returned an invalid response. Expected dict[str, Any].")
