@@ -279,7 +279,6 @@ def _first_non_empty(data: dict[str, Any], keys: list[str], default: Any = None)
 def render_page_1() -> None:
     """Render the original map-based metrics dashboard."""
     st.subheader("Map Visualization")
-    st.sidebar.header("Page 1 Controls")
 
     # Extract available metrics from loaded dataframes (CSV files only, excludes shapefile)
     owid_metrics = []
@@ -306,7 +305,7 @@ def render_page_1() -> None:
         st.error("Merge failed! The OWID metrics didn't attach to the map.")
         st.stop()
 
-    selected_metric = st.sidebar.selectbox(
+    selected_metric = st.selectbox(
         "Select a metric to visualize:",
         valid_metrics,
         format_func=format_metric,
