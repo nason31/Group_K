@@ -1,0 +1,16 @@
+image_model:
+  name: "llava:7b"
+  prompt: "You are an environmental analyst. Describe in detail what you see in this satellite image. Focus on land use, vegetation, water bodies, urban presence, and any visible signs of degradation or deforestation."
+  max_tokens: 512
+  temperature: 0.2
+
+text_model:
+  name: "qwen3.5:4b"
+  prompt: "You are an environmental risk assessor. Given the following description of a satellite image, generate three yes/no questions that would determine if the area is at environmental risk, then answer each one. Conclude with an overall verdict: DANGER or SAFE."
+  max_tokens: 512
+  temperature: 0.1
+
+image_settings:
+  tile_size: 256
+  output_format: "png"
+  esri_url_template: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
