@@ -30,7 +30,7 @@ import importlib
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, ScalarFormatter
 from matplotlib.patches import Patch
 
 from data_handler import OkavangoData, project_sources
@@ -226,12 +226,33 @@ gdf = handler.merged_data
 # ==========================================
 
 PRETTY_LABELS = {
-    "Annual deforestation": "Annual Deforestation",
-    "Net forest conversion": "Annual Change in Forest Area",
-    "Terrestrial protected area": "Share of Protected Land",
-    "Proportion Of Land That Is Degraded Over Total Land Area (%)": "Share of Degraded Land",
-    "Forest area as a proportion of total land area": "Forest Area as Share of Land",
+    "deforestation": "Annual Deforestation",
+    "annual deforestation": "Annual Deforestation",
+    "net forest conversion": "Annual Change in Forest Area",
+    "annual change in forest area": "Annual Change in Forest Area",
+    "terrestrial protected area": "Share of Protected Land",
+    "terrestrial protected areas (% of total land area)": "Share of Protected Land",
+    "proportion of land that is degraded over total land area (%)": "Share of Degraded Land",
+    "forest area as a proportion of total land area": "Forest Area as Share of Land",
+    "share of land covered by forest": "Forest Area as Share of Land",
 }
+
+METRIC_UNITS = {
+    "deforestation": "km²/year",
+    "annual deforestation": "km²/year",
+    "net forest conversion": "km²/year",
+    "annual change in forest area": "km²/year",
+    "terrestrial protected area": "%",
+    "terrestrial protected areas (% of total land area)": "%",
+    "proportion of land that is degraded over total land area (%)": "%",
+    "forest area as a proportion of total land area": "%",
+    "share of land covered by forest": "%",
+}
+
+
+def normalize_metric_name(raw_name: str) -> str:
+    """Normalize metric names for robust label/unit lookups."""
+    return raw_name.strip().lower()
 
 
 def format_metric(raw_name: str) -> str:
@@ -264,7 +285,17 @@ def format_metric(raw_name: str) -> str:
     >>> format_metric("some_new_metric_name")
     'Some New Metric Name'
     """        
-    return PRETTY_LABELS.get(raw_name, raw_name.replace("_", " ").title())
+    normalized_name = normalize_metric_name(raw_name)
+    return PRETTY_LABELS.get(normalized_name, raw_name.replace("_", " ").title())
+
+
+def metric_label_with_unit(raw_name: str) -> str:
+    """Build a display label that includes metric units when known."""
+    pretty_name = format_metric(raw_name)
+    unit = METRIC_UNITS.get(normalize_metric_name(raw_name))
+    if not unit:
+        return pretty_name
+    return f"{pretty_name} ({unit})"
 
 
 def _first_non_empty(data: dict[str, Any], keys: list[str], default: Any = None) -> Any:
@@ -315,7 +346,8 @@ def render_page_1() -> None:
 
     # Ensure metric is numeric for visualization
     gdf[selected_metric] = pd.to_numeric(gdf[selected_metric], errors="coerce")
-    display_name = format_metric(selected_metric)
+    display_name = metric_label_with_unit(selected_metric)
+    selected_unit = METRIC_UNITS.get(normalize_metric_name(selected_metric), "")
 
     # Get data statistics for context
     data_with_values = gdf[selected_metric].dropna()
@@ -343,9 +375,26 @@ def render_page_1() -> None:
             "pad": 0.05,
         },
     )
+
+    # Improve colorbar readability for large-value metrics.
+    colorbar_ax = fig.axes[-1]
+    if normalize_metric_name(selected_metric) in {"deforestation", "annual deforestation", "net forest conversion", "annual change in forest area"}:
+        colorbar_ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x / 1_000_000:.2f}M"))
+        colorbar_ax.xaxis.get_offset_text().set_visible(False)
+    else:
+        plain_formatter = ScalarFormatter(useOffset=False)
+        plain_formatter.set_scientific(False)
+        colorbar_ax.xaxis.set_major_formatter(plain_formatter)
+        colorbar_ax.xaxis.get_offset_text().set_visible(False)
+
+    # Add explicit unit label on the colorbar so users always see the measurement.
+    if selected_unit:
+        colorbar_ax.set_title(f"Unit: {selected_unit}", fontsize=10, pad=8)
+
     ax.set_title(f"Global Distribution: {display_name}", fontsize=16, fontweight="bold", pad=20)
     ax.set_axis_off()
     st.pyplot(fig)
+    st.caption("Grey countries indicate no available source value for the selected metric.")
 
     st.divider()
 
