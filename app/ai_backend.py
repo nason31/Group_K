@@ -416,19 +416,3 @@ def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
         "text_description": text_description,
         "danger": danger,
     }
-
-
-if __name__ == "__main__":
-    # Smoke test for the end-to-end pipeline.
-    try:
-        result = run_pipeline(lat=48.85, lon=2.35, zoom=15)
-        print("✓ Pipeline completed")
-        print(f"Image path: {result['image_path']}")
-        print(f"Image model: {result['image_model']}")
-        print(f"Text model: {result['text_model']}")
-        print(
-            f"Verdict: {'DANGER' if result['danger'] else 'SAFE'}"
-        )
-
-    except Exception as e:
-        print(f"✗ Error: {e}")
