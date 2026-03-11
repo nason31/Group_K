@@ -26,6 +26,7 @@ import os
 import yaml
 import pandas as pd
 import shutil
+from datetime import datetime
 
 
 # ==========================================
@@ -128,3 +129,93 @@ def init_db() -> None:
         print(f"[DB] Initialized new database at {CSV_PATH}")
     else:
         print(f"[DB] Database found at {CSV_PATH}")
+# ==========================================
+# CACHE
+# ==========================================
+
+def check_cache(lat: float, lon: float, zoom: int) -> bool:
+    """
+    Check whether a result for this lat/lon/zoom already exists in the database.
+    Returns True only if both the CSV row AND the image file exist.
+    """
+    if not os.path.exists(CSV_PATH):
+        return False
+
+    df = pd.read_csv(CSV_PATH)
+    if df.empty:
+        return False
+
+    match = df[
+        (df["latitude"]  == lat)  &
+        (df["longitude"] == lon)  &
+        (df["zoom"]      == zoom)
+    ]
+
+    if match.empty:
+        return False
+
+    return os.path.exists(_image_path(lat, lon, zoom))
+
+
+def load_cached_result(lat: float, lon: float, zoom: int) -> dict | None:
+    """
+    Load a cached pipeline result. Returns None if no cache hit.
+    """
+    if not os.path.exists(CSV_PATH):
+        return None
+
+    df = pd.read_csv(CSV_PATH)
+    match = df[
+        (df["latitude"]  == lat)  &
+        (df["longitude"] == lon)  &
+        (df["zoom"]      == zoom)
+    ]
+
+    if match.empty:
+        return None
+
+    row = match.iloc[-1].to_dict()
+    row["image_path"] = _image_path(lat, lon, zoom)
+    return row
+
+
+def save_run(
+    lat: float,
+    lon: float,
+    zoom: int,
+    source_image_path: str,
+    image_prompt: str,
+    image_model: str,
+    image_description: str,
+    text_prompt: str,
+    text_model: str,
+    text_description: str,
+    danger: str,
+) -> dict:
+    """
+    Append a completed pipeline run to the CSV and store the image.
+    """
+    init_db()
+
+    dest_image_path = _image_path(lat, lon, zoom)
+    if source_image_path != dest_image_path:
+        shutil.copy2(source_image_path, dest_image_path)
+
+    row = {
+        "timestamp":         datetime.now().isoformat(timespec="seconds"),
+        "latitude":          lat,
+        "longitude":         lon,
+        "zoom":              zoom,
+        "image_path":        dest_image_path,
+        "image_prompt":      image_prompt,
+        "image_model":       image_model,
+        "image_description": image_description,
+        "text_prompt":       text_prompt,
+        "text_model":        text_model,
+        "text_description":  text_description,
+        "danger":            danger.strip().upper(),
+    }
+
+    pd.DataFrame([row]).to_csv(CSV_PATH, mode="a", header=False, index=False)
+    print(f"[DB] Saved run → lat={lat}, lon={lon}, zoom={zoom}, danger={danger}")
+    return row                
