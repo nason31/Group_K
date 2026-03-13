@@ -8,14 +8,17 @@ This module provides functions for:
 """
 
 import base64
+import argparse
 import importlib
 import math
-import os
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import requests
 import yaml
+
+from app.db import check_cache, load_cached_result, save_run
 
 
 # Module-level cache for models.yaml
@@ -156,7 +159,7 @@ def get_image(
     # Build output filename: replace '.' with '-' in coordinates
     lat_str = str(lat).replace(".", "-")
     lon_str = str(lon).replace(".", "-")
-    filename = f"{lat_str}_{lon_str}_{zoom}.png"
+    filename = f"img_{lat_str}_{lon_str}_{zoom}.png"
 
     # Create output directory if it doesn't exist
     output_path = Path(output_dir)
@@ -400,13 +403,33 @@ def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
         A dictionary containing all pipeline outputs, ready for logging
         and frontend display.
     """
+    if check_cache(lat, lon, zoom):
+        cached_result = load_cached_result(lat, lon, zoom)
+        if cached_result is not None:
+            return cached_result
+
     image_path = get_image(lat, lon, zoom)
     image_model, image_prompt, image_description = describe_image(image_path)
     text_model, text_prompt, text_description, danger = assess_risk(
         image_description
     )
 
+    saved_run = save_run(
+        lat=lat,
+        lon=lon,
+        zoom=zoom,
+        source_image_path=image_path,
+        image_prompt=image_prompt,
+        image_model=image_model,
+        image_description=image_description,
+        text_prompt=text_prompt,
+        text_model=text_model,
+        text_description=text_description,
+        danger=danger,
+    )
+
     return {
+        **saved_run,
         "image_path": image_path,
         "image_model": image_model,
         "image_prompt": image_prompt,
@@ -416,3 +439,121 @@ def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
         "text_description": text_description,
         "danger": danger,
     }
+
+
+def _self_test_run_pipeline() -> None:
+    """Run lightweight cache and persistence checks for ``run_pipeline``."""
+    cached_result = {
+        "latitude": 1.0,
+        "longitude": 2.0,
+        "zoom": 3,
+        "image_path": "/tmp/cached.png",
+        "danger": "SAFE",
+    }
+
+    with (
+        patch("ai_backend.check_cache", return_value=True) as mock_check,
+        patch(
+            "ai_backend.load_cached_result", return_value=cached_result
+        ) as mock_load,
+        patch("ai_backend.get_image") as mock_get_image,
+        patch("ai_backend.describe_image") as mock_describe,
+        patch("ai_backend.assess_risk") as mock_assess,
+        patch("ai_backend.save_run") as mock_save,
+    ):
+        result = run_pipeline(1.0, 2.0, 3)
+
+        assert result == cached_result
+        mock_check.assert_called_once_with(1.0, 2.0, 3)
+        mock_load.assert_called_once_with(1.0, 2.0, 3)
+        mock_get_image.assert_not_called()
+        mock_describe.assert_not_called()
+        mock_assess.assert_not_called()
+        mock_save.assert_not_called()
+
+    saved_result = {
+        "timestamp": "2026-03-13T12:00:00",
+        "latitude": 1.0,
+        "longitude": 2.0,
+        "zoom": 3,
+        "image_path": "/tmp/generated.png",
+        "image_prompt": "image prompt",
+        "image_model": "vision-model",
+        "image_description": "forest near river",
+        "text_prompt": "text prompt",
+        "text_model": "risk-model",
+        "text_description": "SAFE",
+        "danger": "SAFE",
+    }
+
+    with (
+        patch("ai_backend.check_cache", return_value=False) as mock_check,
+        patch(
+            "ai_backend.get_image", return_value="/tmp/generated.png"
+        ) as mock_get_image,
+        patch(
+            "ai_backend.describe_image",
+            return_value=(
+                "vision-model",
+                "image prompt",
+                "forest near river",
+            ),
+        ) as mock_describe,
+        patch(
+            "ai_backend.assess_risk",
+            return_value=(
+                "risk-model",
+                "text prompt",
+                "SAFE",
+                False,
+            ),
+        ) as mock_assess,
+        patch("ai_backend.save_run", return_value=saved_result) as mock_save,
+    ):
+        result = run_pipeline(1.0, 2.0, 3)
+
+        mock_check.assert_called_once_with(1.0, 2.0, 3)
+        mock_get_image.assert_called_once_with(1.0, 2.0, 3)
+        mock_describe.assert_called_once_with("/tmp/generated.png")
+        mock_assess.assert_called_once_with("forest near river")
+        mock_save.assert_called_once_with(
+            lat=1.0,
+            lon=2.0,
+            zoom=3,
+            source_image_path="/tmp/generated.png",
+            image_prompt="image prompt",
+            image_model="vision-model",
+            image_description="forest near river",
+            text_prompt="text prompt",
+            text_model="risk-model",
+            text_description="SAFE",
+            danger=False,
+        )
+        assert result["timestamp"] == saved_result["timestamp"]
+        assert result["image_path"] == "/tmp/generated.png"
+        assert result["danger"] is False
+        assert result["text_description"] == "SAFE"
+
+    print("run_pipeline self-test passed")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run ai_backend self-test or the full pipeline."
+    )
+    parser.add_argument("--lat", type=float, help="Latitude for pipeline run")
+    parser.add_argument("--lon", type=float, help="Longitude for pipeline run")
+    parser.add_argument("--zoom", type=int, help="Zoom level for pipeline run")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run lightweight run_pipeline tests without calling external services.",
+    )
+    args = parser.parse_args()
+
+    if args.self_test:
+        _self_test_run_pipeline()
+    elif None not in (args.lat, args.lon, args.zoom):
+        print(run_pipeline(args.lat, args.lon, args.zoom))
+    else:
+        parser.print_help()

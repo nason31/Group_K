@@ -4,7 +4,7 @@ Project Okavango: Database Module
 Handles all persistence for the AI pipeline on Page 2:
 - Initializes the images.csv database
 - Checks the cache before running the pipeline (keyed on lat + lon + zoom)
-- Saves new pipeline results (CSV row + image file)
+- Saves new pipeline results (CSV row metadata)
 - Loads cached results for display
 
 The database lives in the `database/` directory.
@@ -25,7 +25,6 @@ Notes
 import os
 import yaml
 import pandas as pd
-import shutil
 from datetime import datetime
 
 
@@ -104,7 +103,9 @@ def load_models_config(config_path: str = None) -> dict:
 
 def _image_filename(lat: float, lon: float, zoom: int) -> str:
     """Build a deterministic image filename. e.g. img_-3.0_-3.0_17.png"""
-    return f"img_{lat}_{lon}_{zoom}.png"
+    lat_str = str(lat).replace(".", "-")
+    lon_str = str(lon).replace(".", "-")
+    return f"img_{lat_str}_{lon_str}_{zoom}.png"
 
 
 def _image_path(lat: float, lon: float, zoom: int) -> str:
@@ -190,16 +191,21 @@ def save_run(
     text_prompt: str,
     text_model: str,
     text_description: str,
-    danger: str,
+    danger: bool | str,
 ) -> dict:
     """
-    Append a completed pipeline run to the CSV and store the image.
+    Append a completed pipeline run to the CSV.
     """
     init_db()
 
     dest_image_path = _image_path(lat, lon, zoom)
-    if source_image_path != dest_image_path:
-        shutil.copy2(source_image_path, dest_image_path)
+    # Image persistence is handled upstream in the pipeline.
+    _ = source_image_path
+
+    if isinstance(danger, bool):
+        danger_value = "DANGER" if danger else "SAFE"
+    else:
+        danger_value = danger.strip().upper()
 
     row = {
         "timestamp":         datetime.now().isoformat(timespec="seconds"),
@@ -213,7 +219,7 @@ def save_run(
         "text_prompt":       text_prompt,
         "text_model":        text_model,
         "text_description":  text_description,
-        "danger":            danger.strip().upper(),
+        "danger":            danger_value,
     }
 
     pd.DataFrame([row]).to_csv(CSV_PATH, mode="a", header=False, index=False)
