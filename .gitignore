@@ -11,6 +11,8 @@ __pycache__/
 
 # Project data files
 downloads/
+images/
+database/
 
 # Distribution / packaging
 .Python
