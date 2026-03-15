@@ -2,11 +2,12 @@
 Code for the group assignment in Advanced Programming 2026
 
 ## Team Members
-<!-- 🚨 IMPORTANT: Add your email addresses below (one per line for easy copy-paste to Outlook) -->
-- member1@example.com
-- member2@example.com
-- member3@example.com
-- member4@example.com
+| Name | Student Number | Email |
+|------|---------------|-------|
+| Justus Jonas Nau | 70106 | 70106@novasbe.pt |
+| Konstantin Titze | 74539 | 74539@novasbe.pt |
+| Lenn Louis Schneidewind | 67548 | 67548@novasbe.pt |
+| Nick Christopher Hammerschmid | 70159 | 70159@novasbe.pt |
 
 ---
 
@@ -30,7 +31,11 @@ git clone <repository-url>
 cd Group_K
 
 # Install dependencies
-pip install pandas geopandas streamlit matplotlib requests pydantic shapely
+pip install pandas geopandas streamlit matplotlib requests pydantic shapely pyyaml ollama
+
+# Install Ollama (required for AI workflow)
+# macOS/Linux: https://ollama.com/download
+# The app will automatically pull required models on first run
 
 # Run tests to verify installation
 pytest
@@ -103,6 +108,8 @@ pytest tests/okavango_test.py::test_download
 
 ### How It Works
 
+### Page 1: Data Dashboard
+
 1. **Data Download** (`download_project_data`)
    - Downloads CSV and shapefile data from OWID and Natural Earth
    - Implements idempotent downloads (skips if files exist)
@@ -121,9 +128,75 @@ pytest tests/okavango_test.py::test_download
    - Choropleth world map
    - Top 5 vs Bottom 5 bar chart
 
+### Page 2: AI Workflow
+
+1. **Coordinate Selection** — User selects latitude, longitude, and zoom level (or picks a preset region)
+2. **Satellite Image Fetch** — Downloads a tile from ESRI World Imagery
+3. **Image Description** — A vision model (via Ollama) describes the land cover and visible conditions
+4. **Risk Assessment** — A text model evaluates the description for signs of environmental danger
+5. **Result Display** — The image, description, and a visual risk badge (🟢 SAFE / 🔴 DANGER) are shown
+6. **Caching** — Results are stored in `database/images.csv`; repeated queries load from cache instantly
+
+### AI Model Configuration (`models.yaml`)
+
+The models and prompts used by the AI workflow are fully configurable in `models.yaml` without touching any code:
+
+```yaml
+image_model:
+  name: "llava:7b"
+  prompt: "Describe this satellite image focusing on land use and environmental conditions."
+  max_tokens: 512
+
+text_model:
+  name: "qwen3.5:4b"
+  prompt: "Assess environmental risk based on the following description. Conclude with DANGER or SAFE."
+  max_tokens: 512
+```
+
+---
+
+## Example: Environmental Danger Detection
+
+### Example 1: Amazon Basin Deforestation
+![Amazon Basin](images/example_amazon.png)
+
+The AI workflow flagged this area of the Amazon Basin as **⚠️ High Environmental Risk**. The vision model detected large-scale forest clearing and exposed soil, consistent with active deforestation. The risk model identified signs of habitat destruction and land degradation.
+
+---
+
+### Example 2: Borneo Rainforest Encroachment
+![Borneo](images/example_borneo.png)
+
+This image of Borneo was flagged as **⚠️ High Environmental Risk**. The model identified a mosaic of palm oil plantation and degraded forest edges, indicating ongoing conversion of primary rainforest to agricultural land.
+
+---
+
+### Example 3: Okavango Delta
+![Okavango Delta](images/example_okavango.png)
+
+The Okavango Delta was assessed as **✅ Low Environmental Risk**. The vision model described intact wetland vegetation, healthy water channels, and no visible signs of human encroachment or burning.
+
+---
+
+## How This Project Supports the UN Sustainable Development Goals (SDGs)
+
+This project was built with environmental protection as its core purpose. It directly contributes to several of the United Nations' Sustainable Development Goals:
+
+### SDG 15 — Life on Land
+The dashboard tracks deforestation, land degradation, and protected area coverage globally. By visualizing which countries are losing forest cover fastest and which regions are most degraded, the tool helps researchers and policymakers identify where intervention is most urgently needed. The AI workflow goes further by enabling on-demand satellite analysis of any location on Earth, making it possible to detect deforestation or land degradation at the local level in near real-time.
+
+### SDG 13 — Climate Action
+Forests are critical carbon sinks. Deforestation is one of the leading drivers of greenhouse gas emissions. By making forest loss data immediately accessible and visually interpretable, this project supports climate monitoring efforts. The annual change in forest area dataset allows users to track whether countries are meeting reforestation commitments or accelerating forest loss, directly informing climate action policy.
+
+### SDG 17 — Partnerships for the Goals
+The project is built entirely on open data (Our World in Data, Natural Earth) and open-source tools (Streamlit, GeoPandas, Ollama). This reflects the SDG 17 principle of using open knowledge and technology to strengthen global capacity for sustainable development. The tool is lightweight and reproducible, meaning it can be deployed by NGOs, governments, or researchers anywhere in the world without commercial licensing.
+
+### Conclusion
+Project Okavango demonstrates how data science and AI can be combined to support environmental monitoring at both the global and local scale. As satellite imagery becomes increasingly available and language models become more capable, tools like this have the potential to serve as early warning systems for environmental degradation — helping protect the ecosystems that all life on Earth depends on.
+
+---
+
 ### License
 MIT License - see [LICENSE](LICENSE) for details
 
 ---
-
-**Note:** Remember to add your actual team email addresses in the Team Members section above!
