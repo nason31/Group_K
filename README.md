@@ -64,11 +64,16 @@ Group_K/
 ├── downloads/              # Downloaded datasets (auto-generated)
 ├── app/                    # Application code
 │   ├── __init__.py
+│   ├── ai_backend.py       # AI pipeline: image fetch, vision model, risk assessment
 │   ├── data_handler.py     # Data models and processing logic
+│   ├── db.py               # Database cache logic (images.csv)
 │   └── streamlit_app.py    # Streamlit dashboard UI
+├── database/               # Pipeline run history
+│   └── images.csv          # Cached pipeline results
+├── images/                 # Downloaded satellite images (auto-generated)
 ├── tests/                  # Test files
 │   └── okavango_test.py
-├── notebooks/              # Prototyping notebooks (if any)
+├── models.yaml             # AI model configuration
 ├── main.py                 # Entry point
 ├── README.md
 ├── LICENSE
