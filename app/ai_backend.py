@@ -18,7 +18,10 @@ from unittest.mock import patch
 import requests
 import yaml
 
-from app.db import check_cache, load_cached_result, save_run
+try:
+    from app.db import check_cache, load_cached_result, save_run
+except ModuleNotFoundError:
+    from db import check_cache, load_cached_result, save_run
 
 
 # Module-level cache for models.yaml
