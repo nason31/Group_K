@@ -11,8 +11,9 @@ import base64
 import argparse
 import importlib
 import math
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from unittest.mock import patch
 
 import requests
@@ -26,6 +27,7 @@ except ModuleNotFoundError:
 
 # Module-level cache for models.yaml
 _config_cache: dict[str, Any] | None = None
+_verified_models: set[str] = set()
 
 
 def _load_config() -> dict[str, Any]:
@@ -91,15 +93,33 @@ def get_image(
     """
     # Load configuration
     config = _load_config()
+    _ = config
 
-    # Use ESRI export endpoint for better quality control
-    esri_export_url = (
-        "https://server.arcgisonline.com/ArcGIS/rest/services"
-        "/World_Imagery/MapServer/export"
-    )
+    if not (-90.0 <= lat <= 90.0):
+        raise ValueError(f"Latitude out of range [-90, 90]: {lat}")
+    if not (-180.0 <= lon <= 180.0):
+        raise ValueError(f"Longitude out of range [-180, 180]: {lon}")
+    if not (0 <= zoom <= 28):
+        raise ValueError(f"Zoom out of range [0, 28]: {zoom}")
+
+    # Web Mercator practical latitude limit to keep projection math stable.
+    max_merc_lat = 85.05112878
+    lat_clamped = max(min(lat, max_merc_lat), -max_merc_lat)
+
+    # Use two equivalent ArcGIS hosts; some transient failures only hit one.
+    esri_export_urls = [
+        (
+            "https://server.arcgisonline.com/ArcGIS/rest/services"
+            "/World_Imagery/MapServer/export"
+        ),
+        (
+            "https://services.arcgisonline.com/ArcGIS/rest/services"
+            "/World_Imagery/MapServer/export"
+        ),
+    ]
 
     # Convert lat/lon/zoom to Web Mercator bounding box
-    lat_rad = math.radians(lat)
+    lat_rad = math.radians(lat_clamped)
     lon_rad = math.radians(lon)
 
     # Calculate tile size in meters at the given zoom level
@@ -129,6 +149,13 @@ def get_image(
     bbox_min_y = merc_y - half_size
     bbox_max_y = merc_y + half_size
 
+    # Clamp bbox to valid EPSG:3857 extent.
+    max_merc_extent = 20037508.342789244
+    bbox_min_x = max(-max_merc_extent, min(max_merc_extent, bbox_min_x))
+    bbox_max_x = max(-max_merc_extent, min(max_merc_extent, bbox_max_x))
+    bbox_min_y = max(-max_merc_extent, min(max_merc_extent, bbox_min_y))
+    bbox_max_y = max(-max_merc_extent, min(max_merc_extent, bbox_max_y))
+
     # Request size in pixels
     output_size = 1024 if high_res else 512
 
@@ -136,6 +163,8 @@ def get_image(
     params = {
         "bbox": f"{bbox_min_x},{bbox_min_y},{bbox_max_x},{bbox_max_y}",
         "size": f"{output_size},{output_size}",
+        "bboxSR": 3857,
+        "imageSR": 3857,
         "dpi": 96,
         "format": "png",
         "f": "image",
@@ -149,14 +178,39 @@ def get_image(
         )
     }
 
-    response = requests.get(
-        esri_export_url, params=params, headers=headers, timeout=10
-    )
+    errors: list[str] = []
+    response: requests.Response | None = None
 
-    if response.status_code != 200:
+    # Retry transient failures per host before falling back to the next host.
+    for esri_export_url in esri_export_urls:
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(
+                    esri_export_url, params=params, headers=headers, timeout=10
+                )
+
+                if response.status_code == 200 and response.content:
+                    break
+
+                errors.append(
+                    f"{esri_export_url} attempt {attempt}: HTTP {response.status_code}"
+                )
+            except requests.RequestException as exc:
+                errors.append(
+                    f"{esri_export_url} attempt {attempt}: {type(exc).__name__}: {exc}"
+                )
+
+            # Simple exponential backoff for transient upstream issues.
+            time.sleep(0.5 * (2 ** (attempt - 1)))
+
+        if response is not None and response.status_code == 200 and response.content:
+            break
+
+    if response is None or response.status_code != 200 or not response.content:
+        error_summary = " | ".join(errors[-6:]) if errors else "no response details"
         raise RuntimeError(
-            f"Failed to download image from {esri_export_url}: "
-            f"HTTP {response.status_code}"
+            "Failed to download image from ArcGIS World Imagery after retries. "
+            f"Details: {error_summary}"
         )
 
     # Build output filename: replace '.' with '-' in coordinates
@@ -185,6 +239,10 @@ def ensure_model(model_name: str) -> None:
     Raises:
         RuntimeError: If Ollama is not accessible or the model pull fails.
     """
+    if model_name in _verified_models:
+        print(f"[ensure_model] model '{model_name}' already verified in this session")
+        return
+
     print(f"[ensure_model] checking model: {model_name}")
     ollama_module = importlib.import_module("ollama")
     try:
@@ -233,6 +291,8 @@ def ensure_model(model_name: str) -> None:
             ) from e
     else:
         print(f"[ensure_model] model '{model_name}' already available locally")
+
+    _verified_models.add(model_name)
 
 def describe_image(image_path: str) -> tuple[str, str, str]:
     """Send a satellite image to the configured vision model via Ollama.
@@ -389,7 +449,12 @@ def assess_risk(description: str) -> tuple[str, str, str, bool]:
 
     return model_name, full_prompt, full_response, is_danger
 
-def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
+def run_pipeline(
+    lat: float,
+    lon: float,
+    zoom: int,
+    progress_callback: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     """Run the full AI workflow for a single map location.
 
     This orchestration function:
@@ -406,17 +471,54 @@ def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
         A dictionary containing all pipeline outputs, ready for logging
         and frontend display.
     """
+    def _emit(message: str) -> None:
+        if progress_callback is not None:
+            try:
+                progress_callback(message)
+            except Exception:
+                # UI callback errors should not break the core pipeline.
+                pass
+
+    started_at = time.perf_counter()
+    timings: dict[str, float] = {}
+
+    _emit("Checking cache...")
+    cache_started = time.perf_counter()
     if check_cache(lat, lon, zoom):
         cached_result = load_cached_result(lat, lon, zoom)
         if cached_result is not None:
-            return cached_result
+            timings["cache_seconds"] = round(time.perf_counter() - cache_started, 3)
+            timings["total_seconds"] = round(time.perf_counter() - started_at, 3)
+            _emit("Loaded cached result.")
+            return {
+                **cached_result,
+                "from_cache": True,
+                "timings": timings,
+            }
+    timings["cache_seconds"] = round(time.perf_counter() - cache_started, 3)
 
+    _emit("Downloading satellite image...")
+    image_started = time.perf_counter()
     image_path = get_image(lat, lon, zoom)
+
+    timings["image_download_seconds"] = round(time.perf_counter() - image_started, 3)
+
+    _emit("Running vision model...")
+    vision_started = time.perf_counter()
     image_model, image_prompt, image_description = describe_image(image_path)
+
+    timings["vision_inference_seconds"] = round(time.perf_counter() - vision_started, 3)
+
+    _emit("Running risk assessment model...")
+    risk_started = time.perf_counter()
     text_model, text_prompt, text_description, danger = assess_risk(
         image_description
     )
 
+    timings["risk_inference_seconds"] = round(time.perf_counter() - risk_started, 3)
+
+    _emit("Saving pipeline result...")
+    save_started = time.perf_counter()
     saved_run = save_run(
         lat=lat,
         lon=lon,
@@ -431,8 +533,14 @@ def run_pipeline(lat: float, lon: float, zoom: int) -> dict[str, Any]:
         danger=danger,
     )
 
+    timings["save_seconds"] = round(time.perf_counter() - save_started, 3)
+    timings["total_seconds"] = round(time.perf_counter() - started_at, 3)
+    _emit("Pipeline complete.")
+
     return {
         **saved_run,
+        "from_cache": False,
+        "timings": timings,
         "image_path": image_path,
         "image_model": image_model,
         "image_prompt": image_prompt,
