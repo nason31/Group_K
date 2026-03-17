@@ -24,8 +24,9 @@ Or use the main.py entry point:
 >>> python main.py
 """
 
-from typing import Any, Optional
 import importlib
+from pathlib import Path
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
@@ -477,6 +478,44 @@ def render_risk_badge(is_danger: bool) -> None:
     )
 
 
+def render_location_preview_map(lat: float, lon: float) -> None:
+    """Render a lightweight world map with a marker at the selected location."""
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4.8))
+
+    # Draw a neutral basemap (no data coloring) to orient selected coordinates.
+    gdf.plot(
+        ax=ax,
+        color="#eef2f7",
+        edgecolor="#94a3b8",
+        linewidth=0.35,
+    )
+
+    ax.scatter(
+        [lon], [lat],
+        s=95,
+        c="#dc2626",
+        edgecolors="white",
+        linewidths=1.2,
+        zorder=5,
+    )
+
+    ax.annotate(
+        f"({lat:.2f}, {lon:.2f})",
+        xy=(lon, lat),
+        xytext=(8, 8),
+        textcoords="offset points",
+        fontsize=9,
+        color="#111827",
+        bbox={"boxstyle": "round,pad=0.2", "fc": "white", "ec": "#cbd5e1", "alpha": 0.95},
+    )
+
+    ax.set_title("Selected Location Preview", fontsize=12, fontweight="bold", pad=8)
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-85, 85)
+    ax.set_axis_off()
+    st.pyplot(fig)
+
+
 def render_page_2() -> None:
     """Render the AI workflow page that calls run_pipeline(lat, lon, zoom)."""
     st.subheader("Page 2: AI Image Workflow")
@@ -499,7 +538,6 @@ def render_page_2() -> None:
         lon = st.slider("Longitude", min_value=-180.0, max_value=180.0, value=23.0, step=0.1)
         zoom = st.slider("Zoom", min_value=1, max_value=18, value=11, step=1)
 
-    with col_b:
         preset = st.selectbox(
             "Quick region preset",
             [
@@ -530,14 +568,33 @@ def render_page_2() -> None:
             help="Optional note for the operator; backend can store this if supported.",
         )
 
+    with col_b:
+        st.markdown("### Location on World Map")
+        render_location_preview_map(float(lat), float(lon))
+
     run_clicked = st.button("Run AI Pipeline", type="primary", use_container_width=True)
 
     if run_clicked:
+        status_placeholder = st.empty()
+
+        def _on_pipeline_progress(message: str) -> None:
+            status_placeholder.info(message)
+
         with st.spinner("Running pipeline: image fetch + AI analysis..."):
             try:
-                result = run_pipeline(float(lat), float(lon), int(zoom))
+                try:
+                    result = run_pipeline(
+                        float(lat), float(lon), int(zoom),
+                        progress_callback=_on_pipeline_progress,
+                    )
+                except TypeError:
+                    # Backward-compatible call path for older backends.
+                    result = run_pipeline(float(lat), float(lon), int(zoom))
+
                 st.session_state.pipeline_result = result
+                status_placeholder.success("Pipeline finished. Rendering results...")
             except Exception as exc:
+                status_placeholder.empty()
                 st.error(f"Pipeline execution failed: {exc}")
                 return
     else:
@@ -578,10 +635,33 @@ def render_page_2() -> None:
     with img_col:
         st.markdown("### Satellite Image")
         if image_path:
+            raw_image_path = str(image_path).strip()
             try:
-                st.image(image_path, use_container_width=True)
-            except Exception:
-                st.warning(f"Could not render image at path: {image_path}")
+                candidate_path = Path(raw_image_path)
+                if not candidate_path.is_absolute():
+                    candidate_path = (Path(__file__).parent.parent / candidate_path).resolve()
+
+                # Fallback: if absolute path does not exist, try ./images/<filename>.
+                if not candidate_path.exists():
+                    candidate_path = (Path(__file__).parent.parent / "images" / Path(raw_image_path).name).resolve()
+
+                if candidate_path.exists():
+                    try:
+                        try:
+                            st.image(str(candidate_path), use_container_width=True)
+                        except TypeError:
+                            st.image(str(candidate_path))
+                    except Exception:
+                        # Some environments fail on local path rendering; bytes are more robust.
+                        image_bytes = candidate_path.read_bytes()
+                        try:
+                            st.image(image_bytes, use_container_width=True)
+                        except TypeError:
+                            st.image(image_bytes)
+                else:
+                    st.warning(f"Could not find image file at path: {raw_image_path}")
+            except Exception as exc:
+                st.warning(f"Could not render image at path: {raw_image_path} ({exc})")
         else:
             st.warning("No image path returned by backend.")
 
@@ -592,6 +672,14 @@ def render_page_2() -> None:
     st.markdown("### Environmental Risk Check")
     render_risk_badge(is_danger)
     st.write(risk_text)
+
+    timings = result.get("timings") if isinstance(result, dict) else None
+    if isinstance(timings, dict) and timings:
+        st.markdown("### Pipeline Timings")
+        cols = st.columns(3)
+        cols[0].metric("Total", f"{float(timings.get('total_seconds', 0.0)):.2f}s")
+        cols[1].metric("Vision", f"{float(timings.get('vision_inference_seconds', 0.0)):.2f}s")
+        cols[2].metric("Risk", f"{float(timings.get('risk_inference_seconds', 0.0)):.2f}s")
 
     with st.expander("Pipeline response details"):
         st.json(result)
