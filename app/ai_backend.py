@@ -11,6 +11,7 @@ import base64
 import argparse
 import importlib
 import math
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -445,7 +446,48 @@ def assess_risk(description: str) -> tuple[str, str, str, bool]:
             f"Text model '{model_name}' returned an empty response."
         )
 
-    is_danger: bool = "danger" in full_response.lower()
+    def _infer_is_danger(response_text: str) -> bool:
+        """Infer danger flag from model output with verdict-first parsing."""
+        text = response_text.strip()
+
+        # Prefer explicit verdict labels when present.
+        labeled_matches = re.findall(
+            r"(?:final[_\s]*verdict|overall\s+verdict|verdict|conclusion)"
+            r"\s*[:\-]?\s*(danger|safe)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if labeled_matches:
+            return labeled_matches[-1].lower() == "danger"
+
+        # Next, accept standalone verdict lines like "VERDICT: SAFE" or "DANGER".
+        standalone_matches = re.findall(
+            r"^\s*(?:verdict\s*[:\-]?\s*)?(danger|safe)\s*$",
+            text,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+        if standalone_matches:
+            return standalone_matches[-1].lower() == "danger"
+
+        # Fallback: use the last sentence mentioning safe/danger, with negation
+        # handling to avoid classifying "no danger" as dangerous.
+        sentences = [
+            s.strip() for s in re.split(r"[\n.!?]+", text) if s.strip()
+        ]
+        for sentence in reversed(sentences):
+            lowered = sentence.lower()
+
+            if re.search(r"\b(?:no|not|without)\s+danger\b", lowered):
+                return False
+            if re.search(r"\bsafe\b", lowered):
+                return False
+            if re.search(r"\bdanger\b", lowered):
+                return True
+
+        # Conservative default for malformed responses.
+        return False
+
+    is_danger = _infer_is_danger(full_response)
 
     return model_name, full_prompt, full_response, is_danger
 
