@@ -162,49 +162,72 @@ text_model:
 
 ## Example: Environmental Danger Detection
 
+The following examples showcase the AI workflow applied to four ecologically significant regions. In each case, the pipeline fetched a satellite image for the given coordinates, passed it to a vision model for description, and then evaluated the description through a risk assessment model. The final verdict is shown as a visual badge alongside a summary of the model's reasoning.
+
+---
+
 ### Example 1: Okavango Delta
 ![Okavango Delta](images_readme_examples/okavango_delta.JPG)
 
-The Okavango Delta was assessed as **✅ Low Environmental Risk (SAFE)**. The satellite image shows diverse land use with dense vegetation and numerous water bodies. While some vegetation stress and minor deforestation patches were noted, there are no signs of large-scale industrial pollution or urban development.
+**Verdict: ✅ Low Environmental Risk (SAFE)**
+
+The Okavango Delta in Botswana is one of the world's largest inland river deltas and a UNESCO World Heritage Site. The satellite image shows a mosaic of wetland vegetation, open water channels, and seasonal floodplains. The vision model identified dense green areas indicative of healthy vegetation alongside patches of brown, which are consistent with natural seasonal drying rather than human-induced stress. Numerous water bodies were detected across the landscape, confirming the region's characteristic hydrology.
+
+The risk assessment model evaluated three diagnostic criteria: evidence of widespread vegetation stress, signs of large-scale industrial pollution, and degree of urban encroachment. While limited vegetation stress was noted — consistent with drought or overgrazing in peripheral areas — no industrial activity or significant urban presence was detected. The model concluded that the observed conditions fall within the expected natural variation for this ecosystem type and issued a **SAFE** verdict.
 
 ---
 
 ### Example 2: Amazon Basin
 ![Amazon Basin](images_readme_examples/amazon_basin.JPG)
 
-The Amazon Basin was assessed as **✅ Low Environmental Risk (SAFE)**. The image shows vast areas of dense rainforest with visible deforestation patches and small, scattered urban areas. No active industrial pollution such as smoke plumes or large-scale clearing of bare earth was detected.
+**Verdict: ✅ Low Environmental Risk (SAFE)**
+
+The Amazon Basin represents the world's largest tropical rainforest and one of the most biodiverse regions on Earth. The satellite image captured a broad view of the forest canopy, revealing a dominant layer of dark green vegetation characteristic of primary rainforest, interspersed with lighter green patches that may indicate secondary growth or transitional forest zones. Several river systems and still water bodies were visible, reflecting the Amazon's extensive hydrological network.
+
+The vision model noted scattered signs of deforestation — patches where the forest canopy had been reduced, exposing lighter terrain — as well as limited urban presence described as small relative to the overall forested area. Despite these observations, the risk assessment model determined that no active large-scale industrial pollution was present, no extensive bare-earth clearing was visible, and urban density remained low. The overall condition of the ecosystem was deemed within tolerable bounds for this scale of analysis, resulting in a **SAFE** verdict. This example highlights the tool's ability to detect early-stage deforestation signals even within a broadly healthy ecosystem.
 
 ---
 
 ### Example 3: Borneo Rainforest
 ![Borneo Rainforest](images_readme_examples/borneo_rainforest.JPG)
 
-The Borneo Rainforest was assessed as **✅ Low Environmental Risk (SAFE)**. The satellite image depicts a pristine mountainous landscape with dense, well-preserved forest canopy. No signs of deforestation, urban presence, or ecosystem degradation were visible.
+**Verdict: ✅ Low Environmental Risk (SAFE)**
+
+The Borneo Rainforest is one of the oldest rainforests in the world and home to critically endangered species including orangutans and pygmy elephants. The satellite image in this example shows a mountainous landscape almost entirely covered in dense, dark green vegetation. The canopy appears continuous and well-preserved, with terrain contours clearly visible beneath the forest cover. No roads, clearings, or built structures were detected.
+
+The vision model described the scene as a pristine, natural landscape with high biodiversity potential, noting that the absence of visible water bodies in this particular tile is explained by the elevated, mountainous terrain. The risk model confirmed the absence of all three primary risk indicators — no deforestation, no urban development, and no signs of ecosystem degradation — and issued a **SAFE** verdict. This example serves as a useful baseline reference for what a healthy, undisturbed rainforest looks like in the model's output.
 
 ---
 
 ### Example 4: Great Barrier Reef
 ![Great Barrier Reef](images_readme_examples/great_barrier_reef.JPG)
 
-The Great Barrier Reef coastline was assessed as **✅ Low Environmental Risk (SAFE)**. The image shows a healthy coastal ecosystem with dense vegetation extending from the shoreline and no visible urban infrastructure, roads, or signs of pollution in the water.
+**Verdict: ✅ Low Environmental Risk (SAFE)**
+
+The Great Barrier Reef is the world's largest coral reef system and a UNESCO World Heritage Site under ongoing climate stress. The satellite image captures the Queensland coastline adjacent to the reef, showing calm blue ocean water, a rugged coastline, and dense coastal vegetation extending inland. The foreground is dominated by healthy green cover, transitioning to slightly sparser vegetation further from the shore — a pattern consistent with natural coastal gradients rather than human-induced clearing.
+
+The vision model found no visible signs of urban sprawl, roads, or industrial infrastructure. The water appeared undisturbed and clear, with no visible pollution plumes or discolouration. The risk assessment model confirmed that vegetation density was consistent and healthy, the coastline showed no evidence of development pressure, and no signs of contamination were present in the marine environment. The model issued a **SAFE** verdict. While this image focuses on the terrestrial coastal zone, it reflects the broader health of the surrounding marine ecosystem by the absence of land-based pollution sources.
 
 ---
 
 ## How This Project Supports the UN Sustainable Development Goals (SDGs)
 
-This project was built with environmental protection as its core purpose. It directly contributes to several of the United Nations' Sustainable Development Goals:
+This project was built with environmental protection as its core purpose. It directly contributes to several of the United Nations' Sustainable Development Goals (SDGs). The combination of a global data dashboard and a local-scale AI image analysis pipeline makes it a versatile tool for both macro-level policy analysis and ground-level environmental monitoring.
 
 ### SDG 15 — Life on Land
-The dashboard tracks deforestation, land degradation, and protected area coverage globally. By visualizing which countries are losing forest cover fastest and which regions are most degraded, the tool helps researchers and policymakers identify where intervention is most urgently needed. The AI workflow goes further by enabling on-demand satellite analysis of any location on Earth, making it possible to detect deforestation or land degradation at the local level in near real-time.
+SDG 15 calls for the protection, restoration, and promotion of sustainable use of terrestrial ecosystems, sustainable management of forests, and halting biodiversity loss. This project addresses that goal on two levels. The data dashboard tracks deforestation rates, land degradation, and the share of protected terrestrial areas across all countries using the most recent data available from Our World in Data. Users can immediately identify which countries are losing forest cover fastest or have the lowest proportion of protected land — information that is directly actionable for conservation policy. The AI workflow adds a local dimension: by fetching and analysing satellite imagery for any coordinate on Earth, the tool enables near-real-time detection of deforestation, vegetation loss, and land conversion. This kind of local-scale monitoring is critical for early intervention before degradation becomes irreversible.
 
 ### SDG 13 — Climate Action
-Forests are critical carbon sinks. Deforestation is one of the leading drivers of greenhouse gas emissions. By making forest loss data immediately accessible and visually interpretable, this project supports climate monitoring efforts. The annual change in forest area dataset allows users to track whether countries are meeting reforestation commitments or accelerating forest loss, directly informing climate action policy.
+SDG 13 calls for urgent action to combat climate change and its impacts. Forests are among the most important carbon sinks on the planet, and their destruction is one of the largest contributors to global greenhouse gas emissions. By making annual forest area change data immediately accessible and visually interpretable, this project supports climate monitoring at the national level. Users can track whether countries are honouring reforestation commitments, whether deforestation is accelerating, and how land use change correlates with climate vulnerability. The AI pipeline complements this by providing a rapid, on-demand tool to visually confirm whether satellite-visible land cover changes represent genuine forest loss — bridging the gap between aggregate statistics and ground truth.
 
 ### SDG 17 — Partnerships for the Goals
-The project is built entirely on open data (Our World in Data, Natural Earth) and open-source tools (Streamlit, GeoPandas, Ollama). This reflects the SDG 17 principle of using open knowledge and technology to strengthen global capacity for sustainable development. The tool is lightweight and reproducible, meaning it can be deployed by NGOs, governments, or researchers anywhere in the world without commercial licensing.
+SDG 17 emphasises the importance of open data, open technology, and global partnerships to achieve the other SDGs. This project is built entirely on free and open resources: Our World in Data and Natural Earth provide the datasets, Streamlit provides the dashboard framework, GeoPandas handles geospatial processing, and Ollama enables local AI inference without requiring paid API access. The result is a fully reproducible, zero-cost tool that can be deployed by NGOs, research institutions, or government agencies anywhere in the world. Because no proprietary data or commercial services are required, the tool embodies the principle of technology transfer and capacity building that SDG 17 promotes.
+
+### SDG 6 — Clean Water and Sanitation
+Although not the primary focus of the project, SDG 6 — which calls for the availability and sustainable management of water for all — is indirectly supported. The Okavango Delta and Amazon Basin examples both highlight the presence of major river systems and water bodies that are essential freshwater sources for both wildlife and human populations. Deforestation and land degradation in these watersheds directly threaten water availability downstream. By enabling monitoring of the surrounding terrestrial environment, the tool helps surface early warning signals for risks to freshwater ecosystems before they materialise as water crises.
 
 ### Conclusion
-Project Okavango demonstrates how data science and AI can be combined to support environmental monitoring at both the global and local scale. As satellite imagery becomes increasingly available and language models become more capable, tools like this have the potential to serve as early warning systems for environmental degradation — helping protect the ecosystems that all life on Earth depends on.
+Project Okavango demonstrates how data science and AI can be combined to support environmental monitoring at both the global and local scale. The data dashboard gives policymakers and researchers a high-level view of where environmental stress is most acute, while the AI workflow enables on-demand, image-based analysis of any location on Earth. Together, they form a lightweight but powerful proof-of-concept for the kind of integrated environmental intelligence systems that will be needed to meet the ambitions of the UN's 2030 Agenda. As satellite imagery becomes increasingly available and open-source language models become more capable, tools like this have the potential to serve as scalable early warning systems for environmental degradation — helping protect the ecosystems that all life on Earth depends on.
 
 ---
 
