@@ -6,7 +6,7 @@ image_model:
 
 text_model:
   name: "qwen3.5:4b"
-  prompt: "You are an environmental risk assessor. Given the following description of a satellite image, generate three yes/no questions that would determine if the area is at environmental risk, then answer each one. Conclude with an overall verdict: DANGER or SAFE."
+  prompt: "You are an environmental risk assessor. Given the following description of a satellite image, generate exactly three yes/no questions that determine environmental risk, then answer each one. Keep your explanation concise. End your response with exactly one final line in this exact format: FINAL_VERDICT: DANGER or FINAL_VERDICT: SAFE. Do not output any other verdict line formats."
   max_tokens: 512
   temperature: 0.1
 
