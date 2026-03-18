@@ -50,21 +50,21 @@ def apply_custom_styles() -> None:
         """
         <style>
             .okv-header {
-                background: linear-gradient(120deg, #d8f3dc 0%, #e7f5ff 100%);
-                border: 1px solid #c7e9d0;
-                border-radius: 14px;
-                padding: 1rem 1.2rem;
+                background: #0f172a;
+                border-left: 4px solid #ef4444;
+                border-radius: 8px;
+                padding: 1.2rem 1.4rem;
                 margin-bottom: 1rem;
             }
             .okv-title {
                 margin: 0;
-                color: #114b2b;
+                color: #f1f5f9;
                 font-size: 1.8rem;
             }
             .okv-subtitle {
-                margin: 0.35rem 0 0 0;
-                color: #2f5d50;
-                font-size: 1rem;
+                margin: 0.5rem 0 0 0;
+                color: #cbd5e1;
+                font-size: 0.95rem;
             }
             .okv-nav {
                 display: flex;
@@ -117,7 +117,10 @@ def get_current_page() -> str:
         page = st.query_params.get("page", "dashboard")
         if isinstance(page, list):
             page = page[0] if page else "dashboard"
-        st.session_state.active_page = page if page in valid_pages else "dashboard"
+        if page in valid_pages:
+            st.session_state.active_page = page
+        else:
+            st.session_state.active_page = "dashboard"
 
     return st.session_state.active_page
 
@@ -154,7 +157,15 @@ render_top_header()
 
 
 def get_pipeline_runner() -> Optional[Any]:
-    """Attempt to load the backend pipeline function from common module names."""
+    """Attempt to load the backend pipeline function from common module names.
+
+    Searches for `run_pipeline` function across multiple common module names
+    and returns it if found, making the app compatible with different backend
+    naming conventions.
+
+    Returns:
+        The `run_pipeline` callable if found, otherwise None.
+    """
     module_candidates = [
         "ai_backend",
         "app.ai_backend",
@@ -183,37 +194,26 @@ def get_pipeline_runner() -> Optional[Any]:
 # ==========================================
 
 @st.cache_resource
-def get_data_handler():
-    """
-    Create and cache an `OkavangoData` handler for the Streamlit app.
+def get_data_handler() -> OkavangoData:
+    """Create and cache an OkavangoData handler for the Streamlit app.
 
     This function is decorated with `st.cache_resource` so the expensive steps
     (download, preprocessing, and geospatial merging) are performed only once
     per app session unless the cache is invalidated.
 
-    Returns
-    -------
-    OkavangoData
-        A fully prepared data handler containing the merged geospatial dataset.
+    Returns:
+        A fully prepared data handler containing the merged geospatial
+        dataset.
 
-    Raises
-    ------
-    requests.RequestException
-        If a download fails during handler creation.
-    OSError
-        If local filesystem operations fail (e.g., creating directories).    
+    Raises:
+        requests.RequestException: If a download fails during handler
+            creation.
+        OSError: If local filesystem operations fail (e.g., creating
+            directories).
 
-    Notes
-    -----
-    - A Streamlit spinner is shown while the data is being downloaded and merged.
-    - The handler uses the global `project_sources` configuration from data_handler.py.
-
-    Examples
-    --------
-    In the Streamlit script:
-
-    >>> handler = get_data_handler()
-    >>> gdf = handler.merged_data
+    Note:
+        - A Streamlit spinner is shown while data is downloaded and merged.
+        - The handler uses the global `project_sources` configuration.
     """
     with st.spinner("Downloading and merging the latest data..."):
         return OkavangoData(sources=project_sources)
@@ -253,46 +253,56 @@ METRIC_UNITS = {
 
 
 def normalize_metric_name(raw_name: str) -> str:
-    """Normalize metric names for robust label/unit lookups."""
+    """Normalize metric names for robust label/unit lookups.
+
+    Args:
+        raw_name: The raw metric name to normalize.
+
+    Returns:
+        The normalized metric name (stripped and lowercase).
+    """
     return raw_name.strip().lower()
 
 
 def format_metric(raw_name: str) -> str:
+    """Convert a raw OWID column name into a user-friendly metric label.
+
+    OWID column names can be quite long or inconsistent across different
+    datasets. This function converts them to clean, easy-to-understand labels
+    for display, while keeping original column names internally for processing.
+
+    Args:
+        raw_name: Raw column name as found in OWID CSV files and propagated
+            into the merged GeoDataFrame.
+
+    Returns:
+        Human-readable label for display in the Streamlit UI. If `raw_name` is
+        not in `PRETTY_LABELS`, returns a title-cased formatting of the name.
+
+    Examples:
+        >>> format_metric("Annual deforestation")
+        'Annual Deforestation'
+        >>> format_metric("some_new_metric_name")
+        'Some New Metric Name'
     """
-    Convert a raw OWID column name into a user-friendly metric label.
-
-    Reasoning
-    ---------
-    OWID column names can be quite long or inconsistent across different datasets.
-    For the dashboard, we want the metric names to look clean and easy to understand
-    for users. At the same time, we keep the original column names internally so the
-    data processing and plotting logic continues to work correctly.
-
-    Parameters
-    ----------
-    raw_name : str
-        Raw column name as found in OWID CSV files and propagated into the merged
-        GeoDataFrame.
-
-    Returns
-    -------
-    str
-        Human-readable label for display in the Streamlit UI. If `raw_name` is not
-        present in `PRETTY_LABELS`, a best-effort title-cased formatting is applied.
-
-    Examples
-    --------
-    >>> format_metric("Annual deforestation")
-    'Annual Deforestation'
-    >>> format_metric("some_new_metric_name")
-    'Some New Metric Name'
-    """        
     normalized_name = normalize_metric_name(raw_name)
-    return PRETTY_LABELS.get(normalized_name, raw_name.replace("_", " ").title())
+    return PRETTY_LABELS.get(
+        normalized_name,
+        raw_name.replace("_", " ").title(),
+    )
 
 
 def metric_label_with_unit(raw_name: str) -> str:
-    """Build a display label that includes metric units when known."""
+    """Build a display label that includes metric units when known.
+
+    Args:
+        raw_name: The raw metric name to format with units.
+
+    Returns:
+        A formatted string with metric name and units, e.g.
+        "Annual Deforestation (km²/year)", or just the metric name if units
+        are not available.
+    """
     pretty_name = format_metric(raw_name)
     unit = METRIC_UNITS.get(normalize_metric_name(raw_name))
     if not unit:
@@ -300,8 +310,21 @@ def metric_label_with_unit(raw_name: str) -> str:
     return f"{pretty_name} ({unit})"
 
 
-def _first_non_empty(data: dict[str, Any], keys: list[str], default: Any = None) -> Any:
-    """Return the first present and non-empty value for a list of possible keys."""
+def _first_non_empty(
+    data: dict[str, Any],
+    keys: list[str],
+    default: Any = None,
+) -> Any:
+    """Return the first present and non-empty value for a list of keys.
+
+    Args:
+        data: Dictionary to search for values.
+        keys: List of possible keys to check in order.
+        default: Value to return if no key contains a present/non-empty value.
+
+    Returns:
+        The first non-empty value found, or the default value if none found.
+    """
     for key in keys:
         value = data.get(key)
         if value is not None and value != "":
@@ -310,23 +333,43 @@ def _first_non_empty(data: dict[str, Any], keys: list[str], default: Any = None)
 
 
 def render_page_1() -> None:
-    """Render the original map-based metrics dashboard."""
+    """Render the original map-based metrics dashboard.
+
+    Displays:
+        - Interactive map with selected environmental metric per country.
+        - Top 5 and Bottom 5 country comparisons for the selected metric.
+        - Data summary showing countries with available data.
+    """
     st.subheader("Map Visualization")
     st.sidebar.header("Dashboard Controls")
-    st.sidebar.caption("Choose the environmental indicator to visualize on the global map.")
+    st.sidebar.caption(
+        "Choose the environmental indicator to visualize on the "
+        "global map."
+    )
 
-    # Extract available metrics from loaded dataframes (CSV files only, excludes shapefile)
+    # Extract available metrics (CSV only, excludes shapefile)
     owid_metrics = []
     for _, df in handler.dataframes.items():
         for col in df.columns:
             if col != "Code":
                 owid_metrics.append(col)
 
-    # Filter to only metrics that successfully merged into the geodataframe
+    # Filter to metrics that merged into geodataframe
     # Exclude geometry, shapefile-only columns, and annotation columns
     excluded_columns = {
-        "geometry", "ADMIN", "ISO_A3", "ADM0_A3", "NAME", "CONTINENT", "REGION_UN",
-        "SUBREGION", "REGION_WB", "NAME_LONG", "FORMAL_EN", "SOVEREIGNT", "SOV_A3"
+        "geometry",
+        "ADMIN",
+        "ISO_A3",
+        "ADM0_A3",
+        "NAME",
+        "CONTINENT",
+        "REGION_UN",
+        "SUBREGION",
+        "REGION_WB",
+        "NAME_LONG",
+        "FORMAL_EN",
+        "SOVEREIGNT",
+        "SOV_A3",
     }
 
     valid_metrics = [
@@ -347,9 +390,13 @@ def render_page_1() -> None:
     )
 
     # Ensure metric is numeric for visualization
-    gdf[selected_metric] = pd.to_numeric(gdf[selected_metric], errors="coerce")
+    gdf[selected_metric] = pd.to_numeric(
+        gdf[selected_metric], errors="coerce"
+    )
     display_name = metric_label_with_unit(selected_metric)
-    selected_unit = METRIC_UNITS.get(normalize_metric_name(selected_metric), "")
+    selected_unit = METRIC_UNITS.get(
+        normalize_metric_name(selected_metric), ""
+    )
 
     # Get data statistics for context
     data_with_values = gdf[selected_metric].dropna()
@@ -380,8 +427,18 @@ def render_page_1() -> None:
 
     # Improve colorbar readability for large-value metrics.
     colorbar_ax = fig.axes[-1]
-    if normalize_metric_name(selected_metric) in {"deforestation", "annual deforestation", "net forest conversion", "annual change in forest area"}:
-        colorbar_ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x / 1_000_000:.2f}M"))
+    normalized = normalize_metric_name(selected_metric)
+    large_value_metrics = {
+        "deforestation",
+        "annual deforestation",
+        "net forest conversion",
+        "annual change in forest area",
+    }
+    if normalized in large_value_metrics:
+        formatter = FuncFormatter(
+            lambda x, pos: f"{x / 1_000_000:.2f}M"
+        )
+        colorbar_ax.xaxis.set_major_formatter(formatter)
         colorbar_ax.xaxis.get_offset_text().set_visible(False)
     else:
         plain_formatter = ScalarFormatter(useOffset=False)
@@ -389,14 +446,24 @@ def render_page_1() -> None:
         colorbar_ax.xaxis.set_major_formatter(plain_formatter)
         colorbar_ax.xaxis.get_offset_text().set_visible(False)
 
-    # Add explicit unit label on the colorbar so users always see the measurement.
+    # Add explicit unit label on the colorbar.
     if selected_unit:
-        colorbar_ax.set_title(f"Unit: {selected_unit}", fontsize=10, pad=8)
+        colorbar_ax.set_title(
+            f"Unit: {selected_unit}", fontsize=10, pad=8
+        )
 
-    ax.set_title(f"Global Distribution: {display_name}", fontsize=16, fontweight="bold", pad=20)
+    ax.set_title(
+        f"Global Distribution: {display_name}",
+        fontsize=16,
+        fontweight="bold",
+        pad=20,
+    )
     ax.set_axis_off()
     st.pyplot(fig)
-    st.caption("Grey countries indicate no available source value for the selected metric.")
+    st.caption(
+        "Grey countries indicate no available source value for the "
+        "selected metric."
+    )
 
     st.divider()
 
@@ -406,12 +473,11 @@ def render_page_1() -> None:
 
     st.subheader(f"Extremes: Top 5 and Bottom 5 Countries for {display_name}")
 
-    # Filter out rows with missing data for the selected metric
     chart_data = gdf.dropna(subset=[selected_metric])
     top_5 = chart_data.nlargest(5, selected_metric)
     bottom_5 = chart_data.nsmallest(5, selected_metric)
 
-    # Concatenate bottom 5 first (left side), then top 5 (right side)
+    # Concatenate bottom 5 first (left), then top 5 (right)
     extremes_df = pd.concat([bottom_5, top_5])
 
     # Create bar chart
@@ -422,9 +488,11 @@ def render_page_1() -> None:
     countries = extremes_df[country_col].tolist()
     values = extremes_df[selected_metric].tolist()
 
-    # Color scheme: Bottom 5 (red) on left, Top 5 (green) on right
+    # Bottom 5 (red) on left, Top 5 (green) on right
     colors = ["#d9534f"] * 5 + ["#5cb85c"] * 5
-    bars = ax2.bar(countries, values, color=colors, edgecolor="black", linewidth=0.5)
+    bars = ax2.bar(
+        countries, values, color=colors, edgecolor="black", linewidth=0.5
+    )
 
     # Add value labels on top of bars
     for bar in bars:
@@ -441,16 +509,29 @@ def render_page_1() -> None:
 
     # Create custom legend
     legend_elements = [
-        Patch(facecolor="#d9534f", edgecolor="black", label="Bottom 5 (Lowest)"),
-        Patch(facecolor="#5cb85c", edgecolor="black", label="Top 5 (Highest)"),
+        Patch(
+            facecolor="#d9534f", edgecolor="black", label="Bottom 5 (Lowest)"
+        ),
+        Patch(
+            facecolor="#5cb85c", edgecolor="black", label="Top 5 (Highest)"
+        ),
     ]
-    ax2.legend(handles=legend_elements, loc="upper left", fontsize=10, framealpha=0.9)
+    ax2.legend(
+        handles=legend_elements, loc="upper left", fontsize=10, framealpha=0.9
+    )
 
     ax2.set_ylabel(display_name, fontsize=12, fontweight="bold")
     ax2.set_xlabel("Country", fontsize=12, fontweight="bold")
-    ax2.set_title(f"Top 5 vs Bottom 5 Countries: {display_name}", fontsize=14, fontweight="bold", pad=15)
+    ax2.set_title(
+        f"Top 5 vs Bottom 5 Countries: {display_name}",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
     plt.xticks(rotation=45, ha="right", fontsize=10)
-    ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x:,.0f}"))
+    ax2.yaxis.set_major_formatter(
+        FuncFormatter(lambda x, pos: f"{x:,.0f}")
+    )
     ax2.grid(axis="y", alpha=0.3, linestyle="--")
     fig2.tight_layout()
 
@@ -458,7 +539,12 @@ def render_page_1() -> None:
 
 
 def render_risk_badge(is_danger: bool) -> None:
-    """Render a clear visual indicator for environmental risk."""
+    """Render a clear visual indicator for environmental risk.
+
+    Args:
+        is_danger: If True, renders a high-risk badge; otherwise renders
+            a low-risk badge.
+    """
     if is_danger:
         badge_color = "#b42318"
         bg_color = "#fee4e2"
@@ -479,7 +565,12 @@ def render_risk_badge(is_danger: bool) -> None:
 
 
 def render_location_preview_map(lat: float, lon: float) -> None:
-    """Render a lightweight world map with a marker at the selected location."""
+    """Render a lightweight world map with a marker at the selected location.
+
+    Args:
+        lat: Latitude coordinate of the location to mark.
+        lon: Longitude coordinate of the location to mark.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(10, 4.8))
 
     # Draw a neutral basemap (no data coloring) to orient selected coordinates.
@@ -509,7 +600,9 @@ def render_location_preview_map(lat: float, lon: float) -> None:
         bbox={"boxstyle": "round,pad=0.2", "fc": "white", "ec": "#cbd5e1", "alpha": 0.95},
     )
 
-    ax.set_title("Selected Location Preview", fontsize=12, fontweight="bold", pad=8)
+    ax.set_title(
+        "Selected Location Preview", fontsize=12, fontweight="bold", pad=8
+    )
     ax.set_xlim(-180, 180)
     ax.set_ylim(-85, 85)
     ax.set_axis_off()
@@ -517,7 +610,12 @@ def render_location_preview_map(lat: float, lon: float) -> None:
 
 
 def render_page_2() -> None:
-    """Render the AI workflow page that calls run_pipeline(lat, lon, zoom)."""
+    """Render the AI workflow page that calls run_pipeline(lat, lon, zoom).
+
+    Allows users to select geographic coordinates and zoom level, then run
+    the backend image analysis pipeline. Displays results including satellite
+    imagery, AI-generated descriptions, and environmental risk assessment.
+    """
     st.subheader("Page 2: AI Image Workflow")
     st.caption("Select coordinates and run the image analysis pipeline.")
 
@@ -534,8 +632,20 @@ def render_page_2() -> None:
 
     col_a, col_b = st.columns([1.2, 1])
     with col_a:
-        lat = st.slider("Latitude", min_value=-85.0, max_value=85.0, value=-19.0, step=0.1)
-        lon = st.slider("Longitude", min_value=-180.0, max_value=180.0, value=23.0, step=0.1)
+        lat = st.slider(
+            "Latitude",
+            min_value=-85.0,
+            max_value=85.0,
+            value=-19.0,
+            step=0.1,
+        )
+        lon = st.slider(
+            "Longitude",
+            min_value=-180.0,
+            max_value=180.0,
+            value=23.0,
+            step=0.1,
+        )
         zoom = st.slider("Zoom", min_value=1, max_value=18, value=11, step=1)
 
         preset = st.selectbox(
@@ -565,14 +675,19 @@ def render_page_2() -> None:
         st.text_input(
             "Run label (optional)",
             value="",
-            help="Optional note for the operator; backend can store this if supported.",
+            help=(
+                "Optional note for the operator; backend can store this "
+                "if supported."
+            ),
         )
 
     with col_b:
         st.markdown("### Location on World Map")
         render_location_preview_map(float(lat), float(lon))
 
-    run_clicked = st.button("Run AI Pipeline", type="primary", use_container_width=True)
+    run_clicked = st.button(
+        "Run AI Pipeline", type="primary", use_container_width=True
+    )
 
     if run_clicked:
         status_placeholder = st.empty()
@@ -592,7 +707,9 @@ def render_page_2() -> None:
                     result = run_pipeline(float(lat), float(lon), int(zoom))
 
                 st.session_state.pipeline_result = result
-                status_placeholder.success("Pipeline finished. Rendering results...")
+                status_placeholder.success(
+                    "Pipeline finished. Rendering results..."
+                )
             except Exception as exc:
                 status_placeholder.empty()
                 st.error(f"Pipeline execution failed: {exc}")
@@ -601,21 +718,38 @@ def render_page_2() -> None:
         result = st.session_state.pipeline_result
 
     if result is None:
-        st.info("Choose parameters and click 'Run AI Pipeline' to analyze the area.")
+        st.info(
+            "Choose parameters and click 'Run AI Pipeline' to "
+            "analyze the area."
+        )
         return
 
     if not isinstance(result, dict):
-        st.error("Backend returned an invalid response. Expected dict[str, Any].")
+        st.error(
+            "Backend returned an invalid response. Expected "
+            "dict[str, Any]."
+        )
         return
 
-    from_cache = bool(_first_non_empty(result, ["from_cache", "cached", "cache_hit"], False))
-    image_path = _first_non_empty(result, ["image_path", "image_file", "image", "image_filepath"])
+    from_cache = bool(
+        _first_non_empty(
+            result, ["from_cache", "cached", "cache_hit"], False
+        )
+    )
+    image_path = _first_non_empty(
+        result,
+        ["image_path", "image_file", "image", "image_filepath"],
+    )
     image_description = _first_non_empty(
         result,
         ["image_description", "description", "image_text", "image_caption"],
         "No image description returned.",
     )
-    danger_value = _first_non_empty(result, ["danger", "is_danger", "risk", "danger_flag"], False)
+    danger_value = _first_non_empty(
+        result,
+        ["danger", "is_danger", "risk", "danger_flag"],
+        False,
+    )
     risk_text = _first_non_empty(
         result,
         ["text_description", "risk_text", "risk_assessment", "analysis"],
@@ -623,12 +757,20 @@ def render_page_2() -> None:
     )
 
     danger_str = str(danger_value).strip().lower()
-    is_danger = danger_str in {"y", "yes", "true", "1", "danger", "high", "high_risk"} or bool(danger_value) is True
+    is_danger = (
+        danger_str in {"y", "yes", "true", "1", "danger", "high", "high_risk"}
+        or bool(danger_value) is True
+    )
 
     if from_cache:
-        st.success("Cached result found. Skipped compute and loaded existing analysis.")
+        st.success(
+            "Cached result found. Skipped compute and loaded existing "
+            "analysis."
+        )
     else:
-        st.success("Pipeline completed with a fresh analysis run.")
+        st.success(
+            "Pipeline completed with a fresh analysis run."
+        )
 
     img_col, txt_col = st.columns(2)
 
@@ -639,29 +781,45 @@ def render_page_2() -> None:
             try:
                 candidate_path = Path(raw_image_path)
                 if not candidate_path.is_absolute():
-                    candidate_path = (Path(__file__).parent.parent / candidate_path).resolve()
+                    parent = Path(__file__).parent.parent
+                    candidate_path = (parent / candidate_path).resolve()
 
-                # Fallback: if absolute path does not exist, try ./images/<filename>.
+                # Fallback: if absolute path doesn't exist, try images/
                 if not candidate_path.exists():
-                    candidate_path = (Path(__file__).parent.parent / "images" / Path(raw_image_path).name).resolve()
+                    parent = Path(__file__).parent.parent
+                    candidate_path = (
+                        parent / "images" / Path(raw_image_path).name
+                    ).resolve()
 
                 if candidate_path.exists():
                     try:
                         try:
-                            st.image(str(candidate_path), use_container_width=True)
+                            st.image(
+                                str(candidate_path),
+                                use_container_width=True,
+                            )
                         except TypeError:
                             st.image(str(candidate_path))
                     except Exception:
-                        # Some environments fail on local path rendering; bytes are more robust.
+                        # Some environments fail on local paths; use bytes
                         image_bytes = candidate_path.read_bytes()
                         try:
-                            st.image(image_bytes, use_container_width=True)
+                            st.image(
+                                image_bytes,
+                                use_container_width=True,
+                            )
                         except TypeError:
                             st.image(image_bytes)
                 else:
-                    st.warning(f"Could not find image file at path: {raw_image_path}")
+                    st.warning(
+                        f"Could not find image file at path: "
+                        f"{raw_image_path}"
+                    )
             except Exception as exc:
-                st.warning(f"Could not render image at path: {raw_image_path} ({exc})")
+                st.warning(
+                    f"Could not render image at path: "
+                    f"{raw_image_path} ({exc})"
+                )
         else:
             st.warning("No image path returned by backend.")
 
@@ -677,9 +835,18 @@ def render_page_2() -> None:
     if isinstance(timings, dict) and timings:
         st.markdown("### Pipeline Timings")
         cols = st.columns(3)
-        cols[0].metric("Total", f"{float(timings.get('total_seconds', 0.0)):.2f}s")
-        cols[1].metric("Vision", f"{float(timings.get('vision_inference_seconds', 0.0)):.2f}s")
-        cols[2].metric("Risk", f"{float(timings.get('risk_inference_seconds', 0.0)):.2f}s")
+        cols[0].metric(
+            "Total",
+            f"{float(timings.get('total_seconds', 0.0)):.2f}s",
+        )
+        cols[1].metric(
+            "Vision",
+            f"{float(timings.get('vision_inference_seconds', 0.0)):.2f}s",
+        )
+        cols[2].metric(
+            "Risk",
+            f"{float(timings.get('risk_inference_seconds', 0.0)):.2f}s",
+        )
 
     with st.expander("Pipeline response details"):
         st.json(result)
