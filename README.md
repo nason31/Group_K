@@ -27,7 +27,7 @@ A Streamlit-based data analysis tool for environmental protection using the **mo
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:nason31/Group_K.git
 cd Group_K
 
 # Install dependencies
