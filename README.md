@@ -162,24 +162,31 @@ text_model:
 
 ## Example: Environmental Danger Detection
 
-### Example 1: Amazon Basin Deforestation
-![Amazon Basin](images/example_amazon.png)
+### Example 1: Okavango Delta
+![Okavango Delta](images_readme_examples/okavango_delta.JPG)
 
-The AI workflow flagged this area of the Amazon Basin as **⚠️ High Environmental Risk**. The vision model detected large-scale forest clearing and exposed soil, consistent with active deforestation. The risk model identified signs of habitat destruction and land degradation.
-
----
-
-### Example 2: Borneo Rainforest Encroachment
-![Borneo](images/example_borneo.png)
-
-This image of Borneo was flagged as **⚠️ High Environmental Risk**. The model identified a mosaic of palm oil plantation and degraded forest edges, indicating ongoing conversion of primary rainforest to agricultural land.
+The Okavango Delta was assessed as **✅ Low Environmental Risk (SAFE)**. The satellite image shows diverse land use with dense vegetation and numerous water bodies. While some vegetation stress and minor deforestation patches were noted, there are no signs of large-scale industrial pollution or urban development.
 
 ---
 
-### Example 3: Okavango Delta
-![Okavango Delta](images/example_okavango.png)
+### Example 2: Amazon Basin
+![Amazon Basin](images_readme_examples/amazon_basin.JPG)
 
-The Okavango Delta was assessed as **✅ Low Environmental Risk**. The vision model described intact wetland vegetation, healthy water channels, and no visible signs of human encroachment or burning.
+The Amazon Basin was assessed as **✅ Low Environmental Risk (SAFE)**. The image shows vast areas of dense rainforest with visible deforestation patches and small, scattered urban areas. No active industrial pollution such as smoke plumes or large-scale clearing of bare earth was detected.
+
+---
+
+### Example 3: Borneo Rainforest
+![Borneo Rainforest](images_readme_examples/borneo_rainforest.JPG)
+
+The Borneo Rainforest was assessed as **✅ Low Environmental Risk (SAFE)**. The satellite image depicts a pristine mountainous landscape with dense, well-preserved forest canopy. No signs of deforestation, urban presence, or ecosystem degradation were visible.
+
+---
+
+### Example 4: Great Barrier Reef
+![Great Barrier Reef](images_readme_examples/great_barrier_reef.JPG)
+
+The Great Barrier Reef coastline was assessed as **✅ Low Environmental Risk (SAFE)**. The image shows a healthy coastal ecosystem with dense vegetation extending from the shoreline and no visible urban infrastructure, roads, or signs of pollution in the water.
 
 ---
 
