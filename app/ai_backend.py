@@ -8,14 +8,12 @@ This module provides functions for:
 """
 
 import base64
-import argparse
 import importlib
 import math
 import re
 import time
 from pathlib import Path
 from typing import Any, Callable
-from unittest.mock import patch
 
 import requests
 import yaml
@@ -63,6 +61,7 @@ def _load_config() -> dict[str, Any]:
             ) from e
 
     return _config_cache
+
 
 def get_image(
     lat: float, lon: float, zoom: int, output_dir: str = "images",
@@ -230,6 +229,7 @@ def get_image(
     # Return absolute path
     return str(file_path.resolve())
 
+
 def ensure_model(model_name: str) -> None:
     """
     Ensure an Ollama model is available locally.
@@ -241,14 +241,11 @@ def ensure_model(model_name: str) -> None:
         RuntimeError: If Ollama is not accessible or the model pull fails.
     """
     if model_name in _verified_models:
-        print(f"[ensure_model] model '{model_name}' already verified in this session")
         return
 
-    print(f"[ensure_model] checking model: {model_name}")
     ollama_module = importlib.import_module("ollama")
     try:
         # Use a short timeout for quick connectivity/list checks.
-        print("[ensure_model] connecting to Ollama at localhost:11434")
         list_client = ollama_module.Client(timeout=10.0)
         models_response = list_client.list()
     except Exception as e:
@@ -274,26 +271,18 @@ def ensure_model(model_name: str) -> None:
         if isinstance(name, str) and name:
             available_models.add(name)
 
-    print(
-        f"[ensure_model] found {len(available_models)} local model(s): "
-        f"{sorted(available_models)}"
-    )
-
     if model_name not in available_models:
         try:
-            print(f"[ensure_model] model '{model_name}' not found locally; pulling...")
             # Pull can take minutes depending on model size/network speed.
             pull_client = ollama_module.Client(timeout=1800.0)
             pull_client.pull(model_name)
-            print(f"[ensure_model] pull complete for model '{model_name}'")
         except Exception as e:
             raise RuntimeError(
                 f"Failed to pull model '{model_name}': {e}"
             ) from e
-    else:
-        print(f"[ensure_model] model '{model_name}' already available locally")
 
     _verified_models.add(model_name)
+
 
 def describe_image(image_path: str) -> tuple[str, str, str]:
     """Send a satellite image to the configured vision model via Ollama.
@@ -373,6 +362,7 @@ def describe_image(image_path: str) -> tuple[str, str, str]:
         )
 
     return model_name, prompt, description
+
 
 def assess_risk(description: str) -> tuple[str, str, str, bool]:
     """
@@ -491,6 +481,7 @@ def assess_risk(description: str) -> tuple[str, str, str, bool]:
 
     return model_name, full_prompt, full_response, is_danger
 
+
 def run_pipeline(
     lat: float,
     lon: float,
@@ -592,121 +583,3 @@ def run_pipeline(
         "text_description": text_description,
         "danger": danger,
     }
-
-
-def _self_test_run_pipeline() -> None:
-    """Run lightweight cache and persistence checks for ``run_pipeline``."""
-    cached_result = {
-        "latitude": 1.0,
-        "longitude": 2.0,
-        "zoom": 3,
-        "image_path": "/tmp/cached.png",
-        "danger": "SAFE",
-    }
-
-    with (
-        patch("ai_backend.check_cache", return_value=True) as mock_check,
-        patch(
-            "ai_backend.load_cached_result", return_value=cached_result
-        ) as mock_load,
-        patch("ai_backend.get_image") as mock_get_image,
-        patch("ai_backend.describe_image") as mock_describe,
-        patch("ai_backend.assess_risk") as mock_assess,
-        patch("ai_backend.save_run") as mock_save,
-    ):
-        result = run_pipeline(1.0, 2.0, 3)
-
-        assert result == cached_result
-        mock_check.assert_called_once_with(1.0, 2.0, 3)
-        mock_load.assert_called_once_with(1.0, 2.0, 3)
-        mock_get_image.assert_not_called()
-        mock_describe.assert_not_called()
-        mock_assess.assert_not_called()
-        mock_save.assert_not_called()
-
-    saved_result = {
-        "timestamp": "2026-03-13T12:00:00",
-        "latitude": 1.0,
-        "longitude": 2.0,
-        "zoom": 3,
-        "image_path": "/tmp/generated.png",
-        "image_prompt": "image prompt",
-        "image_model": "vision-model",
-        "image_description": "forest near river",
-        "text_prompt": "text prompt",
-        "text_model": "risk-model",
-        "text_description": "SAFE",
-        "danger": "SAFE",
-    }
-
-    with (
-        patch("ai_backend.check_cache", return_value=False) as mock_check,
-        patch(
-            "ai_backend.get_image", return_value="/tmp/generated.png"
-        ) as mock_get_image,
-        patch(
-            "ai_backend.describe_image",
-            return_value=(
-                "vision-model",
-                "image prompt",
-                "forest near river",
-            ),
-        ) as mock_describe,
-        patch(
-            "ai_backend.assess_risk",
-            return_value=(
-                "risk-model",
-                "text prompt",
-                "SAFE",
-                False,
-            ),
-        ) as mock_assess,
-        patch("ai_backend.save_run", return_value=saved_result) as mock_save,
-    ):
-        result = run_pipeline(1.0, 2.0, 3)
-
-        mock_check.assert_called_once_with(1.0, 2.0, 3)
-        mock_get_image.assert_called_once_with(1.0, 2.0, 3)
-        mock_describe.assert_called_once_with("/tmp/generated.png")
-        mock_assess.assert_called_once_with("forest near river")
-        mock_save.assert_called_once_with(
-            lat=1.0,
-            lon=2.0,
-            zoom=3,
-            source_image_path="/tmp/generated.png",
-            image_prompt="image prompt",
-            image_model="vision-model",
-            image_description="forest near river",
-            text_prompt="text prompt",
-            text_model="risk-model",
-            text_description="SAFE",
-            danger=False,
-        )
-        assert result["timestamp"] == saved_result["timestamp"]
-        assert result["image_path"] == "/tmp/generated.png"
-        assert result["danger"] is False
-        assert result["text_description"] == "SAFE"
-
-    print("run_pipeline self-test passed")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run ai_backend self-test or the full pipeline."
-    )
-    parser.add_argument("--lat", type=float, help="Latitude for pipeline run")
-    parser.add_argument("--lon", type=float, help="Longitude for pipeline run")
-    parser.add_argument("--zoom", type=int, help="Zoom level for pipeline run")
-    parser.add_argument(
-        "--self-test",
-        action="store_true",
-        help="Run lightweight run_pipeline tests without calling external services.",
-    )
-    args = parser.parse_args()
-
-    if args.self_test:
-        _self_test_run_pipeline()
-    elif None not in (args.lat, args.lon, args.zoom):
-        print(run_pipeline(args.lat, args.lon, args.zoom))
-    else:
-        parser.print_help()
