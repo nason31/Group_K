@@ -31,7 +31,7 @@ git clone <repository-url>
 cd Group_K
 
 # Install dependencies
-pip install pandas geopandas streamlit matplotlib requests pydantic shapely pyyaml ollama
+pip install pandas geopandas streamlit matplotlib requests pydantic shapely pyyaml ollama pytest
 
 # Install Ollama (required for AI workflow)
 # macOS/Linux: https://ollama.com/download
