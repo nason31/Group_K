@@ -167,7 +167,7 @@ The following examples showcase the AI workflow applied to four ecologically sig
 ---
 
 ### Example 1: Okavango Delta
-![Okavango Delta](images_readme_examples/okavango_delta.JPG)
+![Okavango Delta](images_readme_examples/okavango_delta.png)
 
 **Verdict: ✅ Low Environmental Risk (SAFE)**
 
@@ -178,7 +178,7 @@ The risk assessment model evaluated three diagnostic criteria: evidence of wides
 ---
 
 ### Example 2: Amazon Basin
-![Amazon Basin](images_readme_examples/amazon_basin.JPG)
+![Amazon Basin](images_readme_examples/amazon_basin.png)
 
 **Verdict: ✅ Low Environmental Risk (SAFE)**
 
@@ -189,7 +189,7 @@ The vision model noted scattered signs of deforestation — patches where the fo
 ---
 
 ### Example 3: Borneo Rainforest
-![Borneo Rainforest](images_readme_examples/borneo_rainforest.JPG)
+![Borneo Rainforest](images_readme_examples/borneo_rainforest.png)
 
 **Verdict: ✅ Low Environmental Risk (SAFE)**
 
@@ -200,7 +200,7 @@ The vision model described the scene as a pristine, natural landscape with high 
 ---
 
 ### Example 4: Great Barrier Reef
-![Great Barrier Reef](images_readme_examples/great_barrier_reef.JPG)
+![Great Barrier Reef](images_readme_examples/great_barrier_reef.png)
 
 **Verdict: ✅ Low Environmental Risk (SAFE)**
 
