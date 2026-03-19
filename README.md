@@ -210,6 +210,45 @@ The vision model found no visible signs of urban sprawl, roads, or industrial in
 
 ---
 
+## Example: High Environmental Risk Detection
+
+The following examples showcase the AI workflow applied to three regions exhibiting clear signs of environmental stress or degradation. As with the SAFE examples above, the pipeline fetched a satellite image for each set of coordinates, passed it to a vision model for description, and evaluated the result through a risk assessment model. All three cases received a **DANGER** verdict.
+
+---
+
+### Example 5: East Texas River Corridor (USA)
+![East Texas](images_readme_examples/30-4_-94-1_12.png)
+
+**Verdict: ⚠️ High Environmental Risk (DANGER)**
+
+This location in the East Texas lowlands captures a meandering river corridor surrounded by a patchwork of dense forest and cleared land. At first glance the riparian vegetation appears healthy, with green cover lining the river banks on both sides. However, the broader landscape tells a more complex story: large areas of bare, exposed land are visible on the left side of the image, standing in stark contrast to the surrounding greenery and pointing to recent deforestation or ecosystem disturbance. On the right side, a road network and structural footprints indicate urban or industrial encroachment actively fragmenting the forested habitat.
+
+The risk assessment model evaluated three diagnostic criteria: the presence of significant bare land lacking vegetation, evidence of human structures and roads encroaching on forested areas, and whether the overall landscape represents a critical and threatened balance between preserved greenery and large-scale development. All three criteria were answered affirmatively. The combination of visible deforestation, habitat fragmentation, and ongoing urban pressure led the model to conclude that the ecosystem is under acute threat, and it issued a **DANGER** verdict.
+
+---
+
+### Example 6: Garzweiler Open-Pit Mine, Germany
+![Garzweiler Mine](images_readme_examples/50-9_6-6_11.png)
+
+**Verdict: ⚠️ High Environmental Risk (DANGER)**
+
+This satellite image of the Rhineland region in western Germany captures one of Europe's largest open-pit lignite mines alongside the agricultural and urban landscape surrounding it. The mine dominates the left half of the frame as a vast, terraced excavation of exposed earth — entirely stripped of vegetation. To the right, a dense grid of streets and buildings marks the boundary of a nearby urban area, while the remaining land is divided into agricultural parcels of varying colours indicating mixed crop cycles. Despite the agricultural greenery, the overall landscape is heavily fragmented and industrialised.
+
+The risk model identified active large-scale land clearing with complete removal of vegetation at the mine site, visible soil erosion along the terraced extraction walls and adjacent rural margins, and a high degree of urbanisation creating sharp habitat fragmentation between the rural and built environments. All three risk criteria returned positive findings. The scale of the extraction operation, the absence of any natural ecosystem within the disturbed zone, and the surrounding development pressure collectively produced a **DANGER** verdict.
+
+---
+
+### Example 7: Karakum Desert, Turkmenistan
+![Karakum Desert](images_readme_examples/37-2_62-2_15.png)
+
+**Verdict: ⚠️ High Environmental Risk (DANGER)**
+
+This image shows a remote arid landscape on the margins of the Karakum Desert in Central Asia. The terrain is predominantly flat and sand-coloured, with only sparse patches of low shrub vegetation breaking the otherwise barren surface. No water bodies are visible, and the absence of any river, lake, or irrigation feature confirms the extreme dryness of the region. A single rectangular structure is faintly discernible, suggesting minimal human presence but no active settlement. The dominant surface texture consists of shifting sand dunes, indicative of active wind erosion and ongoing land degradation.
+
+The risk assessment model noted that while no industrial activity or large-scale mining was detected, the ecological conditions themselves constitute a high-risk environment. The near-total absence of vegetation and surface water creates acute threats to local biodiversity and long-term habitability. Furthermore, the active sand dune formation is evidence of ongoing soil instability and desertification — a form of land degradation that is largely irreversible on human timescales without large-scale intervention. On this basis, the model issued a **DANGER** verdict, underscoring that environmental risk is not limited to human-caused destruction but can also arise from severe natural ecosystem stress.
+
+---
+
 ## How This Project Supports the UN Sustainable Development Goals (SDGs)
 
 This project was built with environmental protection as its core purpose. It directly contributes to several of the United Nations' Sustainable Development Goals (SDGs). The combination of a global data dashboard and a local-scale AI image analysis pipeline makes it a versatile tool for both macro-level policy analysis and ground-level environmental monitoring.
